@@ -1,0 +1,7 @@
+// Cloudflare Workers statik site ayarı: proje klasörü doğrudan yayınlanır (.assetsignore hariçleri)
+// Yayınlamak için: npx wrangler deploy
+{
+  "name": "delta-plc-sim",
+  "compatibility_date": "2026-11-01",
+  "assets": { "directory": "." }
+}

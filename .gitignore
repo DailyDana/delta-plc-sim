@@ -1,2 +1,3 @@
 dagitim/
 test/*.html
+.wrangler/

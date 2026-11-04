@@ -2,7 +2,7 @@
 
 Tarayıcıda çalışan basit bir ladder (merdiven) diyagramı simülatörü. Delta DVP serisinin komut mantığıyla devre kurup çalıştırmak, PLC dersine çalışırken denemeler yapmak için yazıldı.
 
-**Canlı:** https://dailydana.github.io/delta-plc-sim/
+**Canlı:** https://delta-plc-sim.delidana-lab.workers.dev (yedek: https://dailydana.github.io/delta-plc-sim/)
 
 Kurulum gerekmez. İnternetsiz kullanmak için [Releases](https://github.com/DailyDana/delta-plc-sim/releases) sayfasından tek dosyalık sürümü indirip çift tıklamak yeterli.
 
@@ -29,6 +29,7 @@ Derleme adımı yok: `index.html`, `plc-core.js` (IL ayrıştırıcı ve tarama 
 node test/test-core.js        # çekirdek testleri
 node tools/tek-dosya.js       # dagitim/Delta-PLC-Simulator.html (tek dosya sürüm)
 node tools/test-sayfalari.js  # test/*.html sayfalarını üretir (headless tarayıcı testleri için)
+npx wrangler deploy           # Cloudflare'e yayınla
 ```
 
 Delta Electronics ile bir bağlantısı yoktur; "Delta" ve "DVP" adları yalnızca komut setini tarif etmek için geçer.
