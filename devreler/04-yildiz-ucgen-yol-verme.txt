@@ -1,0 +1,23 @@
+#X0 start
+#X1 stop
+#Y0 ana kontaktör
+#Y1 yıldız
+#Y2 üçgen
+; Çalışma rölesi M0 (mühürlemeli)
+LD X0
+OR M0
+ANI X1
+OUT M0
+; M0 açıkken: Y0 ana, T0 5 s, önce yıldız sonra üçgen
+LD M0
+MPS
+OUT Y0
+MRD
+TMR T0 K50
+MRD
+ANI T0
+OUT Y1
+MPP
+AND T0
+OUT Y2
+END

@@ -1,0 +1,27 @@
+#X0 start
+#X1 stop
+; Start'a basınca M0 kurulur (SET)
+LD X0
+SET M0
+; M0 kapalı kontak (tahtada |/| çizili) -> Y0 ve T0 (15 s)
+LDI M0
+OUT Y0
+TMR T0 K150
+; T0 dolunca M0 sıfırlanır
+LD T0
+RST M0
+; T0 dolunca Y1 yanar
+LD T0
+OUT Y1
+; Stop: T0'ı sıfırla ve T1'i (10 s) çalıştır
+LD X1
+RST T0
+TMR T1 K100
+; T1 dolunca Y2 yanar ve T2 (20 s) başlar
+LD T1
+OUT Y2
+TMR T2 K200
+; T2 dolunca T1 sıfırlanır (fotoğrafın devamı kesik)
+LD T2
+RST T1
+END

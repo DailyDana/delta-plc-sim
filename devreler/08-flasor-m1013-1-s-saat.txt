@@ -1,0 +1,7 @@
+#X0 anahtar
+#Y0 flaşör
+; M1013 özel rölesi 0,5 s açık / 0,5 s kapalı çakar
+LD X0
+AND M1013
+OUT Y0
+END

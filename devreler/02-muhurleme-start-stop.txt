@@ -1,0 +1,9 @@
+#X0 start
+#X1 stop
+#Y0 motor
+; Klasik mühürleme: Y0 kendi kontağıyla kendini tutar, stop (kapalı kontak) bırakır
+LD X0
+OR Y0
+ANI X1
+OUT Y0
+END

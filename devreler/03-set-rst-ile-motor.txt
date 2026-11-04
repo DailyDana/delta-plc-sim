@@ -1,0 +1,10 @@
+#X0 start
+#X1 stop
+#Y0 motor
+; Start motoru kurar
+LD X0
+SET Y0
+; Stop motoru sıfırlar (sonra yazılan satır öncelikli)
+LD X1
+RST Y0
+END

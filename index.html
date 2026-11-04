@@ -1,0 +1,455 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="Tarayıcıda çalışan Delta DVP tarzı ladder diyagramı simülatörü: devre kur, çalıştır, IL komut listesine çevir.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 24 24%27%3E%3Crect width=%2724%27 height=%2724%27 rx=%276%27 fill=%27%232563eb%27/%3E%3Cpath d=%27M7 5v14M17 5v14M7 9h3M14 9h3M10 7v4M14 7v4M7 15h10%27 stroke=%27white%27 stroke-width=%272%27 fill=%27none%27 stroke-linecap=%27round%27/%3E%3C/svg%3E">
+<title>Delta PLC Simülatör — vize çalışma aracı</title>
+<script>
+  // Tema: kayıtlı tercih, yoksa sistem ayarı (sayfa boyanmadan önce uygulanır, beyaz parlama olmaz)
+  (function () {
+    var t = localStorage.getItem('deltaPlcSim.theme');
+    if (!t) t = matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+    document.documentElement.dataset.theme = t;
+  })();
+</script>
+<style>
+  /* ============================================================ tema değişkenleri */
+  :root {
+    --bg: #e9edf3; --surface: #ffffff; --surface-2: #f5f7fa; --surface-3: #e8edf4;
+    --text: #0f172a; --muted: #5b6b80; --border: #d3dae4; --border-strong: #aab6c6;
+    --accent: #2563eb; --accent-text: #ffffff; --accent-weak: rgba(37, 99, 235, .12);
+    --on: #15803d; --on-strong: #16a34a; --onbg: #bbf7d0; --lamp: #22c55e;
+    --danger: #dc2626; --danger-weak: #fee2e2; --warn: #b45309; --warn-weak: #fef3c7;
+    --header: #0f172a; --header-text: #e2e8f0; --header-btn: #1e293b; --header-border: #334155;
+    --ladder-bg: #ffffff; --grid-dot: #e3e8ef;
+    --ink: #1f2933; --rail: #475569; --op: #1e3a8a; --lbl: #b45309; --tv: #6d28d9; --bar: #8b5cf6;
+    --shadow: 0 1px 2px rgba(15, 23, 42, .06), 0 2px 8px rgba(15, 23, 42, .05);
+    --shadow-lg: 0 12px 40px rgba(15, 23, 42, .25);
+    --radius: 10px;
+    --mono: "Cascadia Mono", Consolas, monospace;
+    color-scheme: light;
+  }
+  [data-theme="dark"] {
+    --bg: #0a0f1a; --surface: #111827; --surface-2: #172033; --surface-3: #1f2a3f;
+    --text: #e5e9f0; --muted: #9aa8bc; --border: #2a3650; --border-strong: #3d4b66;
+    --accent: #60a5fa; --accent-text: #0b1220; --accent-weak: rgba(96, 165, 250, .16);
+    --on: #4ade80; --on-strong: #22c55e; --onbg: rgba(34, 197, 94, .25); --lamp: #4ade80;
+    --danger: #f87171; --danger-weak: rgba(248, 113, 113, .15); --warn: #fbbf24; --warn-weak: rgba(251, 191, 36, .14);
+    --header: #060a12; --header-text: #e2e8f0; --header-btn: #141c2c; --header-border: #273349;
+    --ladder-bg: #0d1424; --grid-dot: #1a2438;
+    --ink: #cbd5e1; --rail: #64748b; --op: #93c5fd; --lbl: #fbbf24; --tv: #c4b5fd; --bar: #a78bfa;
+    --shadow: 0 1px 2px rgba(0, 0, 0, .4);
+    --shadow-lg: 0 12px 40px rgba(0, 0, 0, .6);
+    color-scheme: dark;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body { margin: 0; font: 14px/1.45 "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif; background: var(--bg); color: var(--text); display: flex; flex-direction: column; overflow: hidden; }
+  button, select, input, textarea { font: inherit; color: inherit; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .ico { width: 16px; height: 16px; flex: none; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+  .ico.fill { fill: currentColor; stroke: none; }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+
+  /* ============================================================ üst çubuk */
+  header { display: flex; align-items: center; gap: 8px; padding: 8px 12px; background: var(--header); color: var(--header-text); flex-wrap: wrap; flex: none; }
+  .brand { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 15px; margin-right: 6px; white-space: nowrap; }
+  .brand .logo { width: 26px; height: 26px; border-radius: 7px; background: linear-gradient(135deg, #2563eb, #16a34a); display: grid; place-items: center; color: #fff; }
+  .grp { display: flex; align-items: center; gap: 4px; }
+  .seg { display: flex; background: var(--header-btn); border: 1px solid var(--header-border); border-radius: 9px; padding: 2px; gap: 2px; }
+  .hb { display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 9px; border-radius: 7px; border: 1px solid transparent; background: transparent; color: var(--header-text); cursor: pointer; white-space: nowrap; transition: background .15s, color .15s; }
+  .hb:hover:not(:disabled) { background: rgba(148, 163, 184, .16); }
+  .hb:disabled { opacity: .4; cursor: default; }
+  .hb.solo { background: var(--header-btn); border-color: var(--header-border); }
+  .hb.icon { padding: 0 8px; }
+  #bRun.active { background: #15803d; color: #fff; }
+  #bPause.active { background: #a16207; color: #fff; }
+  #bStop:hover { background: rgba(220, 38, 38, .3); }
+  header select { max-width: 170px; height: 32px; padding: 0 8px; border-radius: 8px; border: 1px solid var(--header-border); background: var(--header-btn); color: var(--header-text); cursor: pointer; }
+  header select option { background: var(--surface); color: var(--text); }
+  .spacer { flex: 1; }
+  #status { display: flex; align-items: center; gap: 8px; font: 12px var(--mono); color: #94a3b8; white-space: nowrap; }
+  .pill { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 999px; font: 700 12px "Segoe UI", sans-serif; letter-spacing: .04em; background: #334155; color: #e2e8f0; }
+  .pill i { width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
+  .pill.run { background: rgba(34, 197, 94, .18); color: #4ade80; }
+  .pill.run i { animation: pulse 1s infinite; }
+  .pill.pause { background: rgba(234, 179, 8, .18); color: #facc15; }
+  @keyframes pulse { 50% { opacity: .3; } }
+
+  /* ============================================================ sekmeler */
+  #tabs { display: flex; align-items: flex-end; gap: 2px; padding: 6px 10px 0; background: var(--surface-3); border-bottom: 1px solid var(--border); overflow-x: auto; overflow-y: hidden; flex: none; scrollbar-width: thin; }
+  .tab { display: flex; align-items: center; gap: 6px; max-width: 240px; height: 34px; padding: 0 6px 0 12px; background: transparent; border: 1px solid transparent; border-bottom: none; border-radius: 9px 9px 0 0; cursor: pointer; user-select: none; white-space: nowrap; color: var(--muted); transition: background .15s; }
+  .tab:hover { background: var(--surface-2); color: var(--text); }
+  .tab.active { background: var(--bg); border-color: var(--border); color: var(--text); font-weight: 600; margin-bottom: -1px; height: 35px; }
+  .tname { overflow: hidden; text-overflow: ellipsis; }
+  .tdot { width: 7px; height: 7px; border-radius: 50%; background: #f59e0b; flex: none; }
+  .tclose { display: grid; place-items: center; border: none; background: transparent; width: 22px; height: 22px; border-radius: 6px; cursor: pointer; color: var(--muted); padding: 0; }
+  .tclose:hover { background: var(--danger-weak); color: var(--danger); }
+  #tabAdd { display: grid; place-items: center; border: none; background: transparent; width: 32px; height: 30px; margin-bottom: 2px; cursor: pointer; color: var(--muted); border-radius: 8px; }
+  #tabAdd:hover { background: var(--surface-2); color: var(--text); }
+
+  /* ============================================================ ana düzen */
+  main { flex: 1; display: grid; grid-template-columns: 196px 132px minmax(0, 1fr) 340px; gap: 10px; padding: 10px; min-height: 0; }
+  .col { display: flex; flex-direction: column; gap: 10px; min-height: 0; }
+  .panel { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px; overflow: auto; min-height: 0; box-shadow: var(--shadow); scrollbar-width: thin; }
+  .panel h2, details.panel > summary { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 0 0 10px; font-weight: 700; }
+  details.panel > summary { cursor: pointer; list-style: none; display: flex; align-items: center; gap: 6px; margin: 0; user-select: none; }
+  details.panel > summary::before { content: ""; width: 0; height: 0; border-left: 5px solid currentColor; border-top: 4px solid transparent; border-bottom: 4px solid transparent; transition: transform .15s; }
+  details.panel[open] > summary::before { transform: rotate(90deg); }
+  details.panel[open] > summary { margin-bottom: 10px; }
+  details.panel:not([open]) { flex: none; }
+  .muted { color: var(--muted); }
+  .tip, .hint { font-size: 12px; color: var(--muted); }
+  kbd { font: 11px var(--mono); padding: 1px 5px; border: 1px solid var(--border-strong); border-bottom-width: 2px; border-radius: 4px; background: var(--surface-2); color: var(--text); }
+
+  /* ============================================================ G/Ç */
+  .io { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+  .xbtn { border: 1.5px solid var(--border-strong); background: var(--surface-2); border-radius: 9px; padding: 6px 4px; cursor: pointer; text-align: center; user-select: none; font: 700 13px var(--mono); transition: background .1s, border-color .1s, transform .05s; }
+  .xbtn:hover { border-color: var(--accent); }
+  .xbtn:active { transform: scale(.97); }
+  .xbtn small { display: block; font: 400 11px "Segoe UI", sans-serif; color: var(--muted); height: 15px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  .xbtn.on { background: var(--onbg); border-color: var(--on-strong); }
+  .xbtn.lock { outline: 2px dashed #f59e0b; outline-offset: 1px; }
+  .lamp { display: flex; align-items: center; gap: 7px; padding: 3px 4px; font: 700 13px var(--mono); min-width: 0; }
+  .lamp i { width: 15px; height: 15px; border-radius: 50%; background: var(--surface-3); border: 1px solid var(--border-strong); flex: none; transition: background .1s, box-shadow .1s; }
+  .lamp.on i { background: var(--lamp); border-color: var(--on); box-shadow: 0 0 10px var(--lamp); }
+  .lamp span { min-width: 0; }
+  .lamp small { display: block; font: 400 11px "Segoe UI", sans-serif; color: var(--muted); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  .mode { font-size: 12px; color: var(--muted); margin: 10px 0 0; }
+  .mode label { display: flex; gap: 6px; align-items: flex-start; cursor: pointer; margin-bottom: 3px; }
+
+  /* ============================================================ parça panosu */
+  #palette { padding: 10px 8px; }
+  #palette h2 { margin: 2px 2px 6px; font-size: 11px; }
+  #palette h2:not(:first-child) { margin-top: 12px; }
+  .part { display: flex; flex-direction: column; align-items: center; gap: 2px; width: 100%; margin: 0 0 5px; padding: 6px 4px 5px; border: 1px solid var(--border); border-radius: 9px; background: var(--surface-2); cursor: grab; font: inherit; user-select: none; touch-action: none; transition: background .12s, border-color .12s, transform .12s; }
+  .part:hover { background: var(--accent-weak); border-color: var(--accent); transform: translateY(-1px); }
+  .part:active { cursor: grabbing; }
+  .part svg.pi { width: 76px; height: 26px; }
+  .part span { font-size: 11px; color: var(--muted); line-height: 1.2; text-align: center; }
+  .part.tool { flex-direction: row; justify-content: center; gap: 6px; cursor: pointer; padding: 7px 4px; font-size: 12px; font-weight: 600; }
+  .part.tool span { font-size: 12px; color: inherit; }
+  .part.tool.on { background: var(--danger-weak); border-color: var(--danger); color: var(--danger); }
+  #palette.trash { outline: 2px dashed var(--danger); outline-offset: -4px; background: var(--danger-weak); }
+  #palette.trash.hot { background: color-mix(in srgb, var(--danger) 22%, var(--surface)); }
+  .trashMsg { display: none; text-align: center; color: var(--danger); font-weight: 700; font-size: 12px; padding: 6px 0; }
+  #palette.trash .trashMsg { display: block; }
+
+  /* ============================================================ ladder */
+  #ladderWrap { padding: 0; position: relative; background-color: var(--ladder-bg); background-image: radial-gradient(var(--grid-dot) 1px, transparent 1px); background-size: 16px 16px; }
+  #ladder { display: block; }
+  .ltools { position: sticky; top: 8px; float: right; margin: 8px 8px 0 0; z-index: 3; display: flex; align-items: center; gap: 2px; background: var(--surface); border: 1px solid var(--border); border-radius: 9px; padding: 2px; box-shadow: var(--shadow); }
+  .ltools button { display: grid; place-items: center; width: 28px; height: 28px; border: none; background: transparent; border-radius: 7px; cursor: pointer; color: var(--text); }
+  .ltools button:hover { background: var(--surface-3); }
+  .ltools span { font: 12px var(--mono); min-width: 42px; text-align: center; color: var(--muted); cursor: pointer; }
+  #ladder .rail { stroke: var(--rail); stroke-width: 5; stroke-linecap: round; }
+  #ladder .rail.on { stroke: var(--on-strong); }
+  #ladder .w { stroke: var(--ink); stroke-width: 2; }
+  #ladder .w.on { stroke: var(--on-strong); stroke-width: 4; }
+  #ladder .w0 { stroke: var(--ink); stroke-width: 2; }
+  #ladder .cbar { stroke: var(--ink); stroke-width: 3; }
+  #ladder .cbody { fill: transparent; }
+  #ladder .ct.on .cbody { fill: var(--onbg); }
+  #ladder .ct.on .cbar { stroke: var(--on-strong); }
+  #ladder .edge { font-size: 16px; font-weight: 700; fill: var(--ink); }
+  #ladder .coil .cfill { fill: transparent; }
+  #ladder .coil.on .cfill { fill: var(--onbg); }
+  #ladder .coil.on .cbar { stroke: var(--on-strong); }
+  #ladder .box { fill: var(--ladder-bg); stroke: var(--ink); stroke-width: 2; }
+  #ladder .coil.on .box { fill: var(--onbg); stroke: var(--on-strong); }
+  #ladder .boxt { font: 600 14px var(--mono); fill: var(--ink); }
+  #ladder .op { font: 600 13px var(--mono); fill: var(--op); }
+  #ladder .op.bad { fill: var(--danger); text-decoration: underline wavy; }
+  #ladder .lbl { font-size: 11px; fill: var(--lbl); font-style: italic; }
+  #ladder .tv { font: 12px var(--mono); fill: var(--tv); }
+  #ladder .rnum { font: 700 14px var(--mono); fill: var(--muted); cursor: pointer; }
+  #ladder .rnum:hover { fill: var(--accent); }
+  #ladder .rcom { font-size: 12px; fill: var(--muted); font-style: italic; }
+  #ladder .rungbg { fill: transparent; }
+  #ladder .rungbg:hover { fill: color-mix(in srgb, var(--surface-2) 70%, transparent); }
+  #ladder .rungbg.sel { fill: var(--accent-weak); }
+  #ladder .hit { fill: transparent; cursor: grab; rx: 7; }
+  #ladder .hit:hover { fill: var(--accent-weak); }
+  #ladder .hit.sel { fill: var(--accent-weak); stroke: var(--accent); stroke-width: 2; stroke-dasharray: 5 3; }
+  #ladder .hit.dragsrc { fill: var(--accent-weak); stroke: var(--accent); stroke-width: 2; opacity: .9; }
+  #ladder .addrow { cursor: pointer; }
+  #ladder .addrow rect { fill: transparent; stroke: var(--border-strong); stroke-dasharray: 6 4; }
+  #ladder .addrow:hover rect { fill: var(--accent-weak); stroke: var(--accent); }
+  #ladder .addrow text { fill: var(--muted); font-weight: 600; }
+  body.eraser #ladder .hit, body.eraser #ladder .rnum { cursor: crosshair; }
+  body.eraser #ladder .hit:hover { fill: var(--danger-weak); stroke: var(--danger); stroke-width: 2; }
+  /* sürükle-bırak katmanı */
+  #ladder .slot { fill: var(--accent); opacity: .35; pointer-events: none; }
+  #ladder .hotbar { fill: var(--accent); pointer-events: none; }
+  #ladder .hotring { fill: var(--accent); pointer-events: none; }
+  #ladder .hotplus { stroke: var(--accent-text); stroke-width: 2.4; stroke-linecap: round; pointer-events: none; }
+  #ladder .hotlbl rect { fill: var(--accent); }
+  #ladder .hotlbl text { fill: var(--accent-text); font: 600 12px "Segoe UI", sans-serif; }
+  #ladder .hotlbl { pointer-events: none; }
+  body.dragging, body.dragging * { cursor: grabbing !important; user-select: none !important; }
+  #dragGhost { position: fixed; left: 0; top: 0; z-index: 50; pointer-events: none; display: none; align-items: center; gap: 8px; padding: 6px 10px 6px 6px; background: var(--surface); color: var(--text); border: 1.5px solid var(--accent); border-radius: 10px; box-shadow: var(--shadow-lg); font-size: 12px; font-weight: 600; white-space: nowrap; }
+  #dragGhost svg { width: 64px; height: 24px; }
+  #dragGhost.nodrop { border-color: var(--border-strong); opacity: .85; }
+  #dragGhost.del { border-color: var(--danger); color: var(--danger); }
+
+  /* ============================================================ sağ panel */
+  #editor label { display: block; margin: 8px 0; font-size: 12px; color: var(--muted); font-weight: 600; }
+  #editor input, #editor select, #editor textarea, #il { display: block; width: 100%; padding: 6px 8px; border: 1px solid var(--border); border-radius: 7px; margin-top: 3px; background: var(--surface-2); color: var(--text); font: 14px var(--mono); transition: border-color .12s; }
+  #editor input:focus, #editor select:focus, #editor textarea:focus, #il:focus { border-color: var(--accent); outline: none; box-shadow: 0 0 0 3px var(--accent-weak); }
+  #editor h3 { margin: 0 0 4px; font-size: 15px; display: flex; align-items: center; gap: 8px; }
+  #editor h3 .tag { font: 600 11px "Segoe UI", sans-serif; color: var(--muted); background: var(--surface-3); padding: 1px 8px; border-radius: 999px; }
+  .btns { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 10px; }
+  .btns button, .pbtn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; font-size: 13px; padding: 7px 8px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface-2); color: var(--text); cursor: pointer; transition: background .12s, border-color .12s; }
+  .btns button:hover, .pbtn:hover { background: var(--accent-weak); border-color: var(--accent); }
+  .btns .danger, .pbtn.danger { color: var(--danger); }
+  .btns .danger:hover, .pbtn.danger:hover { background: var(--danger-weak); border-color: var(--danger); }
+  .btns .wide { grid-column: span 2; }
+  .pbtn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
+  .pbtn.primary:hover { filter: brightness(1.08); background: var(--accent); }
+  .err { color: var(--danger); font-size: 12px; min-height: 16px; margin-top: 4px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+  .chips button { font: 12px var(--mono); padding: 2px 7px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface-2); color: var(--text); cursor: pointer; }
+  .chips button:hover { border-color: var(--accent); background: var(--accent-weak); }
+  .chips button.cur { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
+  .shortcuts { display: grid; grid-template-columns: auto 1fr; gap: 5px 10px; font-size: 12px; color: var(--muted); margin-top: 12px; align-items: center; }
+  .dev { display: flex; justify-content: space-between; font: 13px var(--mono); padding: 2px 0; }
+  .dev.on b { color: var(--on); }
+  .bar { height: 6px; background: var(--surface-3); border-radius: 3px; overflow: hidden; margin: 2px 0 7px; }
+  .bar i { display: block; height: 100%; background: var(--bar); transition: width .1s linear; }
+  .bar.done i { background: var(--on-strong); }
+  #il { height: 220px; font-size: 13px; line-height: 1.4; resize: vertical; }
+  #ilErrors div, #problems div { font-size: 12px; padding: 3px 0; cursor: pointer; }
+  #problems .okmsg { color: var(--on); cursor: default; }
+  .e { color: var(--danger); } .wn { color: var(--warn); }
+
+  /* ============================================================ pencereler */
+  .modal { position: fixed; inset: 0; background: rgba(2, 6, 23, .6); display: none; align-items: center; justify-content: center; z-index: 40; backdrop-filter: blur(2px); }
+  .modal.show { display: flex; }
+  .modal > div { background: var(--surface); color: var(--text); border: 1px solid var(--border); border-radius: 14px; padding: 20px 24px; width: min(920px, 94vw); max-height: 88vh; overflow: auto; box-shadow: var(--shadow-lg); }
+  .modal h2 { margin-top: 0; display: flex; align-items: center; gap: 8px; }
+  .modal table { border-collapse: collapse; width: 100%; font-size: 13px; }
+  .modal td, .modal th { border-bottom: 1px solid var(--border); padding: 6px 8px; text-align: left; vertical-align: top; }
+  .modal th { color: var(--muted); font-weight: 600; }
+  .modal code { font-family: var(--mono); background: var(--surface-3); padding: 0 5px; border-radius: 4px; }
+  #lib .acts { text-align: right; white-space: nowrap; }
+  #lib .acts button { font-size: 12px; padding: 3px 9px; margin-left: 4px; border-radius: 6px; border: 1px solid var(--border); background: var(--surface-2); color: var(--text); cursor: pointer; }
+  #lib .acts button:hover { background: var(--accent-weak); border-color: var(--accent); }
+  #lib .acts .danger { color: var(--danger); }
+  .libbar { display: flex; gap: 6px; flex-wrap: wrap; }
+  .badge { font-size: 11px; background: var(--onbg); color: var(--on); padding: 1px 7px; border-radius: 8px; font-weight: 600; }
+  #toast { position: fixed; bottom: 22px; left: 50%; transform: translateX(-50%) translateY(16px); background: var(--text); color: var(--surface); padding: 9px 18px; border-radius: 10px; opacity: 0; transition: opacity .18s, transform .18s; pointer-events: none; z-index: 60; box-shadow: var(--shadow-lg); font-weight: 600; }
+  #toast.show { opacity: 1; transform: translateX(-50%); }
+  #toast.bad { background: var(--danger); color: #fff; }
+  #dropHint { position: fixed; inset: 0; background: var(--accent-weak); border: 4px dashed var(--accent); display: none; align-items: center; justify-content: center; font-size: 24px; color: var(--accent); z-index: 45; pointer-events: none; font-weight: 700; }
+
+  @media (max-width: 1700px) { #bHelp .lbl, #bLib .lbl, #bOpen .lbl { display: none; } }
+  @media (max-width: 1450px) { main { grid-template-columns: 176px 120px minmax(0, 1fr) 300px; } .hb .lbl { display: none; } .brand span:last-child { display: none; } }
+</style>
+</head>
+<body>
+<!-- ikon seti -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-play" viewBox="0 0 24 24"><path d="M7 4.5v15l12-7.5z" fill="currentColor" stroke="none"/></symbol>
+  <symbol id="i-pause" viewBox="0 0 24 24"><rect x="6" y="5" width="4" height="14" rx="1" fill="currentColor" stroke="none"/><rect x="14" y="5" width="4" height="14" rx="1" fill="currentColor" stroke="none"/></symbol>
+  <symbol id="i-step" viewBox="0 0 24 24"><path d="M5 5v14l10-7z" fill="currentColor" stroke="none"/><path d="M18 5v14"/></symbol>
+  <symbol id="i-stop" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2" fill="currentColor" stroke="none"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="i-minus" viewBox="0 0 24 24"><path d="M5 12h14"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></symbol>
+  <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></symbol>
+  <symbol id="i-save" viewBox="0 0 24 24"><path d="M5 3h11l5 5v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"/><path d="M7 3v5h8V3M7 21v-7h10v7"/></symbol>
+  <symbol id="i-lib" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="5" rx="1"/><path d="M5 9v10a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V9M10 13h4"/></symbol>
+  <symbol id="i-undo" viewBox="0 0 24 24"><path d="M9 14L4 9l5-5"/><path d="M4 9h11a5 5 0 0 1 0 10h-4"/></symbol>
+  <symbol id="i-redo" viewBox="0 0 24 24"><path d="M15 14l5-5-5-5"/><path d="M20 9H9a5 5 0 0 0 0 10h4"/></symbol>
+  <symbol id="i-help" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9.6 9.2a2.5 2.5 0 1 1 3.6 2.3c-.8.4-1.2.9-1.2 1.8"/><circle cx="12" cy="16.8" r=".6" fill="currentColor"/></symbol>
+  <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></symbol>
+  <symbol id="i-moon" viewBox="0 0 24 24"><path d="M20.5 14.5A8.5 8.5 0 1 1 9.5 3.5a7 7 0 0 0 11 11z"/></symbol>
+  <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></symbol>
+  <symbol id="i-eraser" viewBox="0 0 24 24"><path d="M7 20h13M4.5 14.5l9-9a2 2 0 0 1 2.8 0l2.2 2.2a2 2 0 0 1 0 2.8L11 18H8z"/></symbol>
+  <symbol id="i-rows" viewBox="0 0 24 24"><path d="M3 6h18M3 12h18M3 18h11M18 15v6M15 18h6"/></symbol>
+  <symbol id="i-down" viewBox="0 0 24 24"><path d="M12 4v12M6 11l6 6 6-6M5 20h14"/></symbol>
+  <symbol id="i-up" viewBox="0 0 24 24"><path d="M12 20V8M6 13l6-6 6 6M5 4h14"/></symbol>
+  <symbol id="i-file" viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/></symbol>
+  <symbol id="i-ladder" viewBox="0 0 24 24"><path d="M5 3v18M19 3v18M5 8h4M15 8h4M9 6v4M15 6v4M5 16h14"/></symbol>
+</svg>
+
+<header>
+  <div class="brand"><span class="logo"><svg class="ico"><use href="#i-ladder"/></svg></span><span>Delta PLC Simülatör</span></div>
+
+  <div class="seg" role="group" aria-label="Simülasyon">
+    <button class="hb" id="bRun" title="Çalıştır (F5)"><svg class="ico"><use href="#i-play"/></svg><span class="lbl">RUN</span></button>
+    <button class="hb" id="bPause" title="Duraklat / devam — durum korunur (Boşluk)"><svg class="ico"><use href="#i-pause"/></svg><span class="lbl">Duraklat</span></button>
+    <button class="hb" id="bStep" title="1 tarama (100 ms) ilerlet (N)"><svg class="ico"><use href="#i-step"/></svg><span class="lbl">Adım</span></button>
+    <button class="hb" id="bStop" title="Durdur ve sıfırla"><svg class="ico"><use href="#i-stop"/></svg><span class="lbl">STOP</span></button>
+  </div>
+  <select id="speed" title="Simülasyon hızı" aria-label="Simülasyon hızı">
+    <option value="1">Hız ×1</option><option value="2">Hız ×2</option><option value="5">Hız ×5</option><option value="10">Hız ×10</option><option value="0.25">Hız ×¼</option>
+  </select>
+
+  <div class="seg" role="group" aria-label="Düzen">
+    <button class="hb icon" id="bUndo" title="Geri al (Ctrl+Z)" aria-label="Geri al"><svg class="ico"><use href="#i-undo"/></svg></button>
+    <button class="hb icon" id="bRedo" title="Yinele (Ctrl+Y)" aria-label="Yinele"><svg class="ico"><use href="#i-redo"/></svg></button>
+  </div>
+
+  <div class="seg" role="group" aria-label="Dosya">
+    <button class="hb" id="bNew" title="Yeni sekmede boş devre"><svg class="ico"><use href="#i-plus"/></svg><span class="lbl">Yeni</span></button>
+    <button class="hb" id="bOpen" title="IL .txt dosyasını yeni sekmede aç (sürükle-bırak da olur)"><svg class="ico"><use href="#i-file"/></svg><span class="lbl">Dosya aç</span></button>
+    <button class="hb" id="bSave" title="Kayıtlara kaydet (Ctrl+S) · Farklı kaydet: Ctrl+Shift+S"><svg class="ico"><use href="#i-save"/></svg><span class="lbl">Kaydet</span></button>
+    <button class="hb" id="bLib" title="Kayıtlı devreler"><svg class="ico"><use href="#i-lib"/></svg><span class="lbl">Kayıtlar</span></button>
+  </div>
+  <select id="examples" aria-label="Örnek devreler"><option value="">Örnek devreler…</option></select>
+
+  <span class="spacer"></span>
+  <span id="status"></span>
+  <button class="hb icon solo" id="bTheme" title="Açık / koyu tema" aria-label="Temayı değiştir"><svg class="ico"><use href="#i-moon"/></svg></button>
+  <button class="hb solo" id="bHelp" title="Komutlar ve kısayollar (F1)"><svg class="ico"><use href="#i-help"/></svg><span class="lbl">Yardım</span></button>
+  <input type="file" id="file" accept=".txt,.il,.lst,.json" hidden>
+  <input type="file" id="fileJson" accept=".json" hidden>
+</header>
+
+<nav id="tabs" aria-label="Sekmeler"></nav>
+
+<main>
+  <div class="col">
+    <div class="panel">
+      <h2>Girişler (X)</h2>
+      <div class="io" id="inputs"></div>
+      <div class="mode">
+        <label><input type="radio" name="xmode" value="push" checked> Basmalı buton (bırakınca söner)</label>
+        <label><input type="radio" name="xmode" value="toggle"> Anahtar (tıkla aç/kapa)</label>
+        <div style="margin-top:6px">Sağ tık: girişi kilitle · <kbd>0</kbd>–<kbd>7</kbd>: X0–X7</div>
+      </div>
+    </div>
+    <div class="panel">
+      <h2>Çıkışlar (Y)</h2>
+      <div class="io" id="outputs"></div>
+    </div>
+  </div>
+
+  <div class="panel" id="palette" aria-label="Parça panosu"></div>
+
+  <div class="panel" id="ladderWrap">
+    <div class="ltools">
+      <button id="zOut" title="Uzaklaş (Ctrl + tekerlek)" aria-label="Uzaklaş"><svg class="ico"><use href="#i-minus"/></svg></button>
+      <span id="zVal" title="%100'e dön">100%</span>
+      <button id="zIn" title="Yakınlaş (Ctrl + tekerlek)" aria-label="Yakınlaş"><svg class="ico"><use href="#i-plus"/></svg></button>
+    </div>
+    <svg id="ladder" xmlns="http://www.w3.org/2000/svg"></svg>
+  </div>
+
+  <div class="col">
+    <div class="panel" id="editor"></div>
+    <details class="panel" id="devPanel" open>
+      <summary>M / T / C durumu</summary>
+      <div id="devices"></div>
+      <div id="problems"></div>
+    </details>
+    <details class="panel" id="ilPanel" open>
+      <summary>Komut listesi (IL)</summary>
+      <textarea id="il" spellcheck="false" aria-label="IL komut listesi"></textarea>
+      <div class="btns"><button id="ilApply" class="wide">IL'den devreyi kur</button></div>
+      <div id="ilErrors"></div>
+    </details>
+  </div>
+</main>
+
+<div id="help" class="modal"><div>
+  <h2><svg class="ico"><use href="#i-help"/></svg>Komutlar (Delta DVP)</h2>
+  <table>
+    <tr><th>Komut</th><th>Ladder</th><th>Anlamı</th></tr>
+    <tr><td><code>LD X0</code></td><td>─| |─ (satır başı)</td><td>Normalde açık kontakla yeni satır/blok başlat</td></tr>
+    <tr><td><code>LDI X0</code></td><td>─|/|─ (satır başı)</td><td>Normalde kapalı kontakla başlat</td></tr>
+    <tr><td><code>AND</code> / <code>ANI</code></td><td>seri ─| |─ / ─|/|─</td><td>Seri bağla (VE)</td></tr>
+    <tr><td><code>OR</code> / <code>ORI</code></td><td>alt dala paralel</td><td>Paralel bağla (VEYA)</td></tr>
+    <tr><td><code>LDP</code> / <code>LDF</code>, <code>ANDP</code>, <code>ORP</code>…</td><td>─|↑|─ / ─|↓|─</td><td>Yükselen / düşen kenar: yalnızca bir tarama boyunca iletir</td></tr>
+    <tr><td><code>ANB</code></td><td></td><td>İki bloğu SERİ bağla (her blok LD ile başlar)</td></tr>
+    <tr><td><code>ORB</code></td><td></td><td>İki bloğu PARALEL bağla</td></tr>
+    <tr><td><code>MPS</code> / <code>MRD</code> / <code>MPP</code></td><td>çıkış tarafında dallanma</td><td>Ortak noktayı sakla / oku / oku ve bitir (çıkış dallarında farklı kontak varsa)</td></tr>
+    <tr><td><code>OUT Y0</code></td><td>─( )</td><td>Bobin: akım varsa 1, yoksa 0</td></tr>
+    <tr><td><code>SET M0</code></td><td>[SET M0]</td><td>Akım gelince 1 yap ve öyle bırak (mandal)</td></tr>
+    <tr><td><code>RST M0</code></td><td>[RST M0]</td><td>Akım gelince 0 yap. T/C için değeri ve kontağı sıfırlar</td></tr>
+    <tr><td><code>TMR T0 K50</code></td><td>[TMR T0 K50]</td><td>Akım sürdükçe sayar; K değerine ulaşınca T0 kontağı kapanır. Akım kesilirse sıfırlanır. T0–T199: 100 ms (K50 = 5 s), T200–T239: 10 ms, T240–T255: 1 ms</td></tr>
+    <tr><td><code>CNT C0 K5</code></td><td>[CNT C0 K5]</td><td>Her yükselen kenarda +1; K'ya ulaşınca C0 kontağı kapanır. RST ile sıfırlanır</td></tr>
+    <tr><td><code>PLS M0</code> / <code>PLF M0</code></td><td>[PLS M0]</td><td>Girişin yükselen / düşen kenarında M0 tek tarama 1 olur</td></tr>
+    <tr><td><code>END</code></td><td></td><td>Program sonu</td></tr>
+  </table>
+  <h3>Özel röleler</h3>
+  <p><code>M1000</code> RUN'da hep 1 · <code>M1002</code> RUN başında tek tarama 1 · <code>M1011</code> 10 ms · <code>M1012</code> 100 ms · <code>M1013</code> 1 s · <code>M1014</code> 1 dk saat darbesi</p>
+  <h3>Bilinmesi gerekenler</h3>
+  <ul>
+    <li>X ve Y adresleri <b>sekizlik</b>: X0…X7, sonra X10…X17. <code>X8</code>, <code>Y9</code> yoktur.</li>
+    <li>PLC programı yukarıdan aşağı tarar; aynı bobini iki satırda yazarsan (çift bobin) sonuncusu geçerli olur.</li>
+    <li>SET ile kurulan bir bit, RST gelene kadar 1 kalır. Aynı taramada ikisi de çalışırsa sonra yazılan kazanır.</li>
+    <li>Ladder ekranında: yeşil kalın çizgi = akım var, yeşil dolgulu kontak = kontak kapalı (iletiyor).</li>
+  </ul>
+  <h3>Devre kurma</h3>
+  <ul>
+    <li><b>Panodan sürükle:</b> sürüklerken gidebileceği yerler nokta olarak görünür; en yakın nokta mıknatıs gibi yakalanır ve ne olacağı yazar (seri / paralel / alta çıkış / yeni satır).</li>
+    <li><b>Ladder'daki parçayı sürükle:</b> taşır. <kbd>Ctrl</kbd> basılıyken bırakırsan kopyalar. Panoya geri bırakırsan siler. <kbd>Esc</kbd> sürüklemeyi iptal eder.</li>
+    <li>Panodaki parçaya <b>tıklarsan</b> seçili öğenin yanına eklenir (sürüklemeden de kurulabilir).</li>
+    <li>Bir kontağa / bobine tıkla → sağdaki panelden türünü, adresini değiştir. Satır numarasına tıkla → satır işlemleri.</li>
+    <li>IL kutusuna komut listesi yazıp "IL'den devreyi kur" da diyebilirsin. <code>#X0 start</code> satırı X0'a etiket koyar, <code>;</code> açıklamadır.</li>
+  </ul>
+  <h3>Kısayollar</h3>
+  <table>
+    <tr><td><kbd>F5</kbd></td><td>RUN</td><td><kbd>Boşluk</kbd></td><td>Duraklat / devam</td></tr>
+    <tr><td><kbd>N</kbd></td><td>Tek adım</td><td><kbd>0</kbd>–<kbd>7</kbd></td><td>X0–X7'ye bas</td></tr>
+    <tr><td><kbd>Ctrl</kbd>+<kbd>Z</kbd> / <kbd>Ctrl</kbd>+<kbd>Y</kbd></td><td>Geri al / yinele</td><td><kbd>Ctrl</kbd>+<kbd>S</kbd></td><td>Kaydet (<kbd>Shift</kbd> ile farklı)</td></tr>
+    <tr><td><kbd>Delete</kbd></td><td>Seçiliyi sil</td><td><kbd>Ctrl</kbd>+<kbd>D</kbd></td><td>Seçili kontağı/bobini çoğalt</td></tr>
+    <tr><td><kbd>Alt</kbd>+<kbd>1</kbd>…<kbd>9</kbd></td><td>Sekmeye geç</td><td><kbd>Ctrl</kbd>+tekerlek</td><td>Yakınlaştır</td></tr>
+  </table>
+  <p style="text-align:right;margin-bottom:0"><button class="pbtn" data-close>Kapat</button></p>
+</div></div>
+
+<div id="lib" class="modal"><div>
+  <h2><svg class="ico"><use href="#i-lib"/></svg>Kayıtlı devreler</h2>
+  <p class="muted" id="libCur"></p>
+  <div class="libbar">
+    <button class="pbtn primary" id="libSave"><svg class="ico"><use href="#i-save"/></svg>Bu sekmeyi kaydet</button>
+    <button class="pbtn" id="libSaveAs">Farklı kaydet…</button>
+    <button class="pbtn" id="libTxt"><svg class="ico"><use href="#i-file"/></svg>Bu sekmeyi .txt indir</button>
+    <span style="flex:1"></span>
+    <button class="pbtn" id="libExport" title="Tüm kayıtları tek .json dosyasına indir"><svg class="ico"><use href="#i-down"/></svg>Yedek al (.json)</button>
+    <button class="pbtn" id="libImport" title="Yedek .json dosyasından kayıtları geri yükle"><svg class="ico"><use href="#i-up"/></svg>Yedekten yükle</button>
+  </div>
+  <table style="margin-top:12px"><thead><tr><th>Ad</th><th>Kaydedilme</th><th>Boyut</th><th></th></tr></thead><tbody id="libList"></tbody></table>
+  <p class="muted" style="font-size:12px">Kayıtlar bu tarayıcının belleğinde (localStorage) tutulur. Tarayıcı verilerini temizlersen silinir; ara sıra "Yedek al" ile .json indir. Açık sekmeler de otomatik saklanır.</p>
+  <p style="text-align:right;margin-bottom:0"><button class="pbtn" data-close>Kapat</button></p>
+</div></div>
+
+<div id="dragGhost"></div>
+<div id="toast" role="status" aria-live="polite"></div>
+<div id="dropHint">IL dosyasını bırak</div>
+
+<div id="loadErr" style="display:none;position:fixed;inset:auto 16px 16px 16px;z-index:99;background:#b91c1c;color:#fff;padding:14px 18px;border-radius:12px;font:14px/1.5 'Segoe UI',sans-serif;box-shadow:0 10px 30px rgba(0,0,0,.4)"></div>
+<script>
+  // Program yüklenemezse sayfa boş kalmasın: nedenini ekrana yaz
+  window.__showLoadErr = function (html) {
+    var b = document.getElementById('loadErr');
+    if (!b) return;
+    b.innerHTML = html;
+    b.style.display = 'block';
+  };
+  window.addEventListener('error', function (e) {
+    if (e.target && e.target.tagName === 'SCRIPT') {
+      window.__showLoadErr('<b>Program dosyası yüklenemedi:</b> ' + (e.target.getAttribute('src') || '') +
+        '<br>Zip içinden çift tıklayarak açtıysan önce zip&#39;i bir klasöre <b>çıkar</b> (sağ tık → Tümünü ayıkla), sonra klasördeki index.html&#39;i aç. ' +
+        'Ya da tek dosyalık sürümü (Delta-PLC-Simulator.html) kullan.');
+    } else if (e.message) {
+      window.__showLoadErr('<b>Hata:</b> ' + e.message + (e.filename ? ' (' + e.filename.split('/').pop() + ':' + e.lineno + ')' : '') +
+        '<br>Tarayıcı çok eskiyse Edge, Chrome ya da Brave&#39;in güncel sürümüyle aç.');
+    }
+  }, true);
+</script>
+<script src="plc-core.js"></script>
+<script src="examples.js"></script>
+<script src="app.js"></script>
+<script>
+  if (!window.PLC_APP_OK && !document.getElementById('loadErr').innerHTML)
+    window.__showLoadErr('<b>Program başlatılamadı.</b> Zip içinden açtıysan önce klasöre çıkar; olmazsa Delta-PLC-Simulator.html tek dosya sürümünü kullan.');
+</script>
+</body>
+</html>

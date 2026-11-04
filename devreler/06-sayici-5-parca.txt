@@ -1,0 +1,12 @@
+#X0 sensör
+#X1 reset
+#Y0 kutu dolu
+; Her X0 basışında C0 bir artar; 5 olunca Y0 yanar
+LD X0
+CNT C0 K5
+LD C0
+OUT Y0
+; X1 sayıcıyı sıfırlar
+LD X1
+RST C0
+END

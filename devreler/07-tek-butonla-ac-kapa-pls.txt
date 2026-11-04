@@ -1,0 +1,13 @@
+#X0 buton
+#Y0 lamba
+; X0'ın yükselen kenarında M0 tek tarama 1 olur
+LD X0
+PLS M0
+; Y0 = M0 XOR Y0  -> her basışta durum değişir (LD + ORB örneği)
+LD M0
+ANI Y0
+LDI M0
+AND Y0
+ORB
+OUT Y0
+END

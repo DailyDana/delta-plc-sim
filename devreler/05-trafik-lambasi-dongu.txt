@@ -1,0 +1,18 @@
+#Y0 kırmızı
+#Y1 sarı
+#Y2 yeşil
+; T0 kırmızı 5 s, T1 sarı 2 s, T2 yeşil 5 s; T2 dolunca hepsi sıfırlanıp döngü başa döner
+LDI T2
+TMR T0 K50
+LD T0
+TMR T1 K20
+LD T1
+TMR T2 K50
+LDI T0
+OUT Y0
+LD T0
+ANI T1
+OUT Y1
+LD T1
+OUT Y2
+END
