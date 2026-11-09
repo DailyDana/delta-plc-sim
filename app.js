@@ -1666,7 +1666,43 @@ function init() {
     storageFailed();
     $('#libNote').textContent = 'Bu tarayıcı kayıtları kalıcı saklamıyor: kayıtlar yalnızca bu sayfa açıkken durur. Saklamak için "Yedeği metin olarak göster" ile kopyala ya da normal bir tarayıcı penceresinde aç.';
   }
+  openFromHash();
+  window.addEventListener('hashchange', openFromHash);
   requestAnimationFrame(loop);
+}
+
+// ------------------------------------------------------------------ bağlantıyla devre açma
+// <site>#il=<base64url IL>&ad=<sekme adı>&run=1   ya da   #ornek=4
+// (CLI: "npm run plc -- link dosya.txt" bu bağlantıyı üretir; kodlama src/core/share.ts ile aynı)
+function decodeShare(code) {
+  const b64 = code.replace(/-/g, '+').replace(/_/g, '/') + '==='.slice((code.length + 3) % 4);
+  const bin = atob(b64);
+  return new TextDecoder().decode(Uint8Array.from(bin, (c) => c.charCodeAt(0)));
+}
+function openFromHash() {
+  const h = location.hash.replace(/^#/, '');
+  if (!/(^|&)(il|ornek)=/.test(h)) return;
+  const p = new URLSearchParams(h);
+  let il = null;
+  let name = p.get('ad') || 'Bağlantıdan açılan';
+  try {
+    if (p.get('il')) il = decodeShare(p.get('il'));
+    else {
+      const ex = PLC_EXAMPLES[parseInt(p.get('ornek'), 10) - 1];
+      if (ex) { il = ex.il; name = p.get('ad') || ex.name; }
+    }
+  } catch (e) {
+    toast('Bağlantıdaki devre okunamadı', true);
+  }
+  // yenileyince aynı devre tekrar açılmasın
+  history.replaceState(null, '', location.pathname + location.search);
+  if (il == null) return;
+  const norm = toIL(parseIL(il).prog);
+  const same = tabs.findIndex((t) => t.il === norm);
+  if (same >= 0) switchTab(same);
+  else openInNewTab(name, il);
+  if (p.get('run') === '1') $('#bRun').click();
+  toast('Bağlantıdaki devre açıldı: ' + name);
 }
 
 // ------------------------------------------------------------------ dış API: PLC.app

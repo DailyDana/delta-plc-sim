@@ -80,5 +80,23 @@ let threw = false;
 try { PLC.app.set('X8', 1); } catch (e) { threw = true; }
 ok(threw, 'geçersiz giriş adresi (X8) hata attı');
 
+// 7) Bağlantıyla açma (#il=…&ad=…&run=1) — kodlama CLI'daki share.ts ile aynı
+const enc = (t) => btoa(String.fromCharCode(...new TextEncoder().encode(t))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+const LINK_IL = '#X0 başlat\nLD X0\nOUT Y3\nEND';
+PLC.app.stop();
+const nTabs = tabs.length;
+history.replaceState(null, '', '#il=' + enc(LINK_IL) + '&ad=Bağlantı&run=1');
+openFromHash();
+ok(tabs.length === nTabs + 1 && tabs[activeTab].name === 'Bağlantı' && /OUT Y3/.test(PLC.app.getIL()) && prog.labels.X0 === 'başlat', 'bağlantıdaki devre (Türkçe etiketle) yeni sekmede açıldı');
+ok(mode === 'run' && !location.hash, 'run=1 ile çalıştı, adres çubuğu temizlendi');
+history.replaceState(null, '', '#il=' + enc(LINK_IL));
+openFromHash();
+ok(tabs.length === nTabs + 1, 'aynı devre ikinci kez açılınca yeni sekme açılmadı');
+history.replaceState(null, '', '#ornek=4');
+openFromHash();
+// (yıldız-üçgen 6. adımda "yu" adıyla açıktı: aynı devre olduğu için o sekmeye geçilir)
+ok(/TMR T0 K50/.test(PLC.app.getIL()) && /OUT Y2/.test(PLC.app.getIL()), '#ornek=4 yıldız-üçgeni açtı (zaten açıksa o sekmeye geçti)');
+PLC.app.stop();
+
 res.push('BITTI');
 console.log('TESTOUT ' + res.join(' ;; '));

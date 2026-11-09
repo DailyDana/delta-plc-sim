@@ -1,3 +1,4 @@
 dagitim/
 test/*.html
 .wrangler/
+node_modules/

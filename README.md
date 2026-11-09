@@ -19,18 +19,30 @@ Kurulum gerekmez. İnternetsiz kullanmak için [Releases](https://github.com/Dai
 
 ## Zamanlayıcı ve sayıcılar
 
-T0–T199 100 ms, T200–T239 10 ms, T240–T255 1 ms tabanlı (`TMR T0 K50` = 5 s). C0–C199 16 bit yukarı sayıcı. Gerçek DVP modellerinde aralıklar modele göre biraz farklı olabilir; bu bir öğrenme aracıdır, gerçek PLC'nin yerini tutmaz.
+Tarayıcı arayüzü şimdilik sadeleştirilmiş tabloyu kullanır: T0–T199 100 ms, T200–T239 10 ms, T240–T255 1 ms (`TMR T0 K50` = 5 s); C0–C199 16 bit yukarı sayıcı. Yeni çekirdekte gerçek model tabloları var (ör. ES2: T127 1 ms, T240–T245 10 ms birikimli, T246–T249 1 ms birikimli, T250–T255 100 ms birikimli); arayüz Aşama 2'de bunlara geçecek. Bu bir öğrenme aracıdır, gerçek PLC'nin yerini tutmaz.
 
 ## Geliştirme
 
-Derleme adımı yok: `index.html`, `plc-core.js` (IL ayrıştırıcı ve tarama motoru), `app.js` (arayüz), `examples.js`.
+Tarayıcı arayüzü (v1) derleme adımı olmadan çalışır: `index.html`, `plc-core.js`, `app.js`, `examples.js`.
+
+Yeni çekirdek (v2) TypeScript ile `src/core/` altında: IL ayrıştırıcı ve statik analiz, gerçek PLC gibi komut komut çalışan sanal makine, ladder ↔ IL dönüşümü (iç içe MPS), Delta kılavuzlarından alınmış model profilleri (ES2, SS2, EH3). Arayüz Aşama 2'de bu çekirdeğe geçecek.
 
 ```
-node tools/test.js            # tüm testler (çekirdek + headless Edge)
-node test/test-core.js        # yalnızca çekirdek testleri
+npm install
+npm test                      # çekirdek testleri (v1 ile 300 rastgele devrelik eşdeğerlik testi dahil)
+npm run typecheck
+node tools/test.js            # tarayıcı testleri (headless Edge)
 node tools/tek-dosya.js       # dagitim/Delta-PLC-Simulator.html (tek dosya sürüm)
-node tools/test-sayfalari.js  # test/*.html sayfalarını üretir (headless tarayıcı testleri için)
 npx wrangler deploy           # Cloudflare'e yayınla
+```
+
+### Komut satırı
+
+```
+npm run plc -- kontrol devre.txt
+npm run plc -- sim devre.txt --olay "0:X0=1 100:X0=0" --sure 6s --dalga
+npm run plc -- ciz devre.txt
+npm run plc -- link devre.txt --run
 ```
 
 ### Dışarıdan sürmek (`PLC.app`)
