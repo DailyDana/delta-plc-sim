@@ -9,8 +9,9 @@
 <script>
   // Tema: kayıtlı tercih, yoksa sistem ayarı (sayfa boyanmadan önce uygulanır, beyaz parlama olmaz)
   (function () {
-    var t = localStorage.getItem('deltaPlcSim.theme');
-    if (!t) t = matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+    var t = null;
+    try { t = localStorage.getItem('deltaPlcSim.theme'); } catch (e) { /* depolama kapalı: sistem temasına düş */ }
+    if (!t) t = window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
     document.documentElement.dataset.theme = t;
   })();
 </script>
@@ -244,6 +245,23 @@
   #toast.show { opacity: 1; transform: translateX(-50%); }
   #toast.bad { background: var(--danger); color: #fff; }
   #dropHint { position: fixed; inset: 0; background: var(--accent-weak); border: 4px dashed var(--accent); display: none; align-items: center; justify-content: center; font-size: 24px; color: var(--accent); z-index: 45; pointer-events: none; font-weight: 700; }
+  /* uygulama içi diyalog (tarayıcının prompt/confirm pencereleri yerine; gömülü tarayıcılarda da çalışır) */
+  #dlg { z-index: 70; }
+  #dlg > div { width: min(480px, 92vw); padding: 18px 20px; }
+  #dlg.wide > div { width: min(760px, 94vw); }
+  #dlg h2 { font-size: 17px; margin: 0 0 6px; }
+  #dlgMsg { margin: 0 0 12px; white-space: pre-line; }
+  #dlgInput, #dlgText { display: block; width: 100%; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface-2); color: var(--text); font: 14px var(--mono); }
+  #dlgText { height: 280px; resize: vertical; font-size: 13px; line-height: 1.4; }
+  #dlgInput:focus, #dlgText:focus { border-color: var(--accent); outline: none; box-shadow: 0 0 0 3px var(--accent-weak); }
+  .dlgbtns { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
+  .pbtn.danger-solid { background: var(--danger); border-color: var(--danger); color: #fff; }
+  .pbtn.danger-solid:hover { filter: brightness(1.08); background: var(--danger); }
+  /* depolama uyarısı */
+  #storeWarn { position: fixed; left: 50%; transform: translateX(-50%); bottom: 16px; z-index: 55; width: min(560px, calc(100vw - 32px)); display: none; gap: 10px; align-items: flex-start; padding: 12px 14px; border-radius: 12px; background: var(--warn-weak); color: var(--text); border: 1px solid var(--warn); box-shadow: var(--shadow-lg); font-size: 13px; }
+  #storeWarn.show { display: flex; }
+  #storeWarn b { color: var(--warn); }
+  #storeWarn button { flex: none; border: none; background: transparent; color: var(--muted); cursor: pointer; font-size: 18px; line-height: 1; padding: 0 2px; }
 
   @media (max-width: 1700px) { #bHelp .lbl, #bLib .lbl, #bOpen .lbl { display: none; } }
   @media (max-width: 1450px) { main { grid-template-columns: 176px 120px minmax(0, 1fr) 300px; } .hb .lbl { display: none; } .brand span:last-child { display: none; } }
@@ -411,15 +429,29 @@
     <button class="pbtn primary" id="libSave"><svg class="ico"><use href="#i-save"/></svg>Bu sekmeyi kaydet</button>
     <button class="pbtn" id="libSaveAs">Farklı kaydet…</button>
     <button class="pbtn" id="libTxt"><svg class="ico"><use href="#i-file"/></svg>Bu sekmeyi .txt indir</button>
+    <button class="pbtn" id="libShow" title="İndirme engelliyse: metni göster, kopyala">Metin olarak göster</button>
     <span style="flex:1"></span>
     <button class="pbtn" id="libExport" title="Tüm kayıtları tek .json dosyasına indir"><svg class="ico"><use href="#i-down"/></svg>Yedek al (.json)</button>
+    <button class="pbtn" id="libExportText" title="İndirme engelliyse: yedeği metin olarak göster, kopyala">Yedeği metin olarak göster</button>
     <button class="pbtn" id="libImport" title="Yedek .json dosyasından kayıtları geri yükle"><svg class="ico"><use href="#i-up"/></svg>Yedekten yükle</button>
+    <button class="pbtn" id="libPaste" title="IL komut listesi ya da .json yedek metnini yapıştır">Metin yapıştırarak yükle</button>
   </div>
   <table style="margin-top:12px"><thead><tr><th>Ad</th><th>Kaydedilme</th><th>Boyut</th><th></th></tr></thead><tbody id="libList"></tbody></table>
-  <p class="muted" style="font-size:12px">Kayıtlar bu tarayıcının belleğinde (localStorage) tutulur. Tarayıcı verilerini temizlersen silinir; ara sıra "Yedek al" ile .json indir. Açık sekmeler de otomatik saklanır.</p>
+  <p class="muted" style="font-size:12px" id="libNote">Kayıtlar bu tarayıcının belleğinde (localStorage) tutulur. Tarayıcı verilerini temizlersen silinir; ara sıra "Yedek al" ile .json indir. Açık sekmeler de otomatik saklanır.</p>
   <p style="text-align:right;margin-bottom:0"><button class="pbtn" data-close>Kapat</button></p>
 </div></div>
 
+<div id="dlg" class="modal" role="dialog" aria-modal="true" aria-labelledby="dlgTitle"><div>
+  <h2 id="dlgTitle"></h2>
+  <p id="dlgMsg" class="muted"></p>
+  <input id="dlgInput" type="text" autocomplete="off" spellcheck="false" aria-labelledby="dlgTitle">
+  <textarea id="dlgText" spellcheck="false" aria-labelledby="dlgTitle"></textarea>
+  <div class="dlgbtns"><button class="pbtn" id="dlgCancel">Vazgeç</button><button class="pbtn primary" id="dlgOk">Tamam</button></div>
+</div></div>
+<div id="storeWarn" role="alert">
+  <div><b>Bu tarayıcı kayıtları kalıcı saklamıyor.</b><br>Gizli pencere ya da gömülü bir tarayıcı olabilir. Sayfa kapanınca sekmeler ve kayıtlar kaybolabilir; saklamak için <b>Kayıtlar → Yedeği metin olarak göster</b> ile kopyala ya da normal bir tarayıcı penceresinde aç.</div>
+  <button id="storeWarnClose" aria-label="Uyarıyı kapat" title="Kapat">×</button>
+</div>
 <div id="dragGhost"></div>
 <div id="toast" role="status" aria-live="polite"></div>
 <div id="dropHint">IL dosyasını bırak</div>

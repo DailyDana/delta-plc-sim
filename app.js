@@ -23,7 +23,57 @@ const inputs = {};   // X anlık durumu
 const locked = {};   // sağ tıkla kilitlenen girişler
 let pwEls = [], clEls = [], qEls = [], tvEls = [];
 let slots = [];      // sürükle-bırak için geçerli bırakma noktaları (her çizimde yeniden toplanır)
-let zoom = parseFloat(localStorage.getItem('deltaPlcSim.zoom')) || 1;
+
+// ------------------------------------------------------------------ korumalı depolama
+// Gizli pencere, gömülü tarayıcı (ör. Claude uygulaması) ya da kapalı çerez ayarında localStorage
+// hata atabilir ya da hiç yazmayabilir. Tüm erişim buradan geçer: hata olursa bellekte tutulur ve
+// kullanıcıya "kayıtlar kalıcı değil" uyarısı gösterilir; uygulama asla bu yüzden çökmez.
+const store = (function () {
+  const mem = {};
+  let ok = true;
+  try {
+    const k = '__deltaPlcSim_test';
+    localStorage.setItem(k, '1');
+    if (localStorage.getItem(k) !== '1') ok = false;
+    localStorage.removeItem(k);
+  } catch (e) {
+    ok = false;
+  }
+  const api = {
+    get ok() { return ok; },
+    get(k) {
+      if (ok) {
+        try { return localStorage.getItem(k); } catch (e) { ok = false; storageFailed(); }
+      }
+      return Object.prototype.hasOwnProperty.call(mem, k) ? mem[k] : null;
+    },
+    set(k, v) {
+      mem[k] = String(v);
+      if (!ok) return false;
+      try {
+        localStorage.setItem(k, String(v));
+        return true;
+      } catch (e) {
+        // kota dolu ya da erişim engellendi: bellekte devam et, kullanıcıyı uyar
+        ok = false;
+        storageFailed();
+        return false;
+      }
+    },
+    remove(k) {
+      delete mem[k];
+      if (ok) try { localStorage.removeItem(k); } catch (e) { /* önemsiz */ }
+    },
+  };
+  // Destekleniyorsa tarayıcıdan kalıcı depolama iste (temizlikte silinmesin)
+  try { if (ok && navigator.storage && navigator.storage.persist) navigator.storage.persist(); } catch (e) { /* önemsiz */ }
+  return api;
+})();
+function storageFailed() {
+  const w = document.getElementById('storeWarn');
+  if (w) w.classList.add('show');
+}
+let zoom = parseFloat(store.get('deltaPlcSim.zoom')) || 1;
 
 const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
@@ -1038,6 +1088,103 @@ function loop(now) {
   requestAnimationFrame(loop);
 }
 
+// ------------------------------------------------------------------ uygulama içi diyaloglar
+// Tarayıcının prompt()/confirm()/alert() pencereleri gömülü tarayıcılarda (ör. Claude uygulaması)
+// desteklenmez ya da sessizce null döner; bu yüzden hepsi bu Promise tabanlı pencereden geçer.
+// Testler window.__dlgAuto = ({ title, input, text }) => yanıt ile pencereyi atlayabilir.
+let dlgFinish = null;
+function openDialog(o) {
+  if (typeof window.__dlgAuto === 'function') return Promise.resolve(window.__dlgAuto(o));
+  if (dlgFinish) dlgFinish(undefined); // önceki pencere açık kaldıysa kapat
+  const hasInput = o.input != null;
+  const hasText = o.text != null;
+  const cancelValue = hasInput || hasText ? null : false;
+  return new Promise((resolve) => {
+    const d = $('#dlg'), inp = $('#dlgInput'), ta = $('#dlgText'), ok = $('#dlgOk'), cancel = $('#dlgCancel');
+    const prevFocus = document.activeElement;
+    $('#dlgTitle').textContent = o.title || '';
+    $('#dlgMsg').textContent = o.msg || '';
+    $('#dlgMsg').style.display = o.msg ? '' : 'none';
+    inp.style.display = hasInput ? '' : 'none';
+    inp.value = hasInput ? o.input : '';
+    ta.style.display = hasText ? '' : 'none';
+    ta.value = hasText ? o.text : '';
+    ta.readOnly = !!o.readOnly;
+    ta.placeholder = o.placeholder || '';
+    d.classList.toggle('wide', hasText);
+    ok.textContent = o.okText || 'Tamam';
+    ok.classList.toggle('primary', !o.danger);
+    ok.classList.toggle('danger-solid', !!o.danger);
+    cancel.textContent = o.cancelText || 'Vazgeç';
+    d.classList.add('show');
+    const onKey = (e) => {
+      if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); finish(cancelValue); }
+      else if (e.key === 'Enter' && e.target.tagName !== 'TEXTAREA' && e.target.tagName !== 'BUTTON') { e.preventDefault(); e.stopPropagation(); ok.click(); }
+      else if (e.key === 'Tab') {
+        // odak pencerenin içinde dolaşsın
+        const f = [...d.querySelectorAll('input, textarea, button')].filter((x) => x.offsetParent !== null);
+        if (!f.length) return;
+        const i = f.indexOf(document.activeElement);
+        if (e.shiftKey && i <= 0) { e.preventDefault(); f[f.length - 1].focus(); }
+        else if (!e.shiftKey && i === f.length - 1) { e.preventDefault(); f[0].focus(); }
+      }
+    };
+    function finish(v) {
+      d.classList.remove('show');
+      window.removeEventListener('keydown', onKey, true);
+      dlgFinish = null;
+      if (prevFocus && prevFocus.focus) try { prevFocus.focus({ preventScroll: true }); } catch (e) { /* önemsiz */ }
+      resolve(v);
+    }
+    dlgFinish = finish;
+    window.addEventListener('keydown', onKey, true);
+    ok.onclick = () => finish(hasInput ? inp.value : hasText ? ta.value : true);
+    cancel.onclick = () => finish(cancelValue);
+    d.onclick = (e) => { if (e.target === d) finish(cancelValue); };
+    setTimeout(() => {
+      if (hasInput) { inp.focus(); inp.select(); }
+      else if (hasText) { ta.focus(); if (o.readOnly) ta.select(); }
+      else ok.focus();
+    }, 0);
+  });
+}
+// Metin sorar; boş ya da vazgeçilirse null
+async function askText(title, def, msg) {
+  const v = await openDialog({ title, msg, input: def || '', okText: 'Tamam' });
+  return v == null || !String(v).trim() ? null : String(v).trim();
+}
+const askConfirm = (title, msg, o) => openDialog(Object.assign({ title, msg, okText: 'Evet' }, o || {})).then((v) => v === true);
+// Metni gösterir; "Kopyala" panoya kopyalar (pano API'si engelliyse metin seçili kalır, Ctrl+C ile alınır)
+async function showText(title, text, msg) {
+  const v = await openDialog({ title, msg: msg || 'İndirme çalışmıyorsa bu metni kopyalayıp bir dosyaya yapıştırabilirsin.', text, readOnly: true, okText: 'Kopyala', cancelText: 'Kapat' });
+  if (v == null) return;
+  if (await copyText(text)) toast('Panoya kopyalandı');
+  else {
+    toast('Pano erişimi engelli — metni seçip Ctrl+C ile kopyala', true);
+    showText(title, text, 'Pano erişimi engelli: metin seçili, Ctrl+C ile kopyala.');
+  }
+}
+async function copyText(text) {
+  try {
+    if (navigator.clipboard && window.isSecureContext) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+  } catch (e) { /* aşağıdaki yönteme düş */ }
+  try {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.cssText = 'position:fixed;left:-9999px;top:0';
+    document.body.appendChild(ta);
+    ta.select();
+    const ok = document.execCommand('copy');
+    ta.remove();
+    return ok;
+  } catch (e) {
+    return false;
+  }
+}
+
 // ------------------------------------------------------------------ sekmeler
 // Her sekme ayrı bir devredir. Sekmeler tarayıcıda (localStorage) otomatik saklanır,
 // tarayıcı kapanıp açılınca aynen geri gelir.
@@ -1060,7 +1207,7 @@ function syncTab(il) {
 function persistTabs() {
   try {
     // geri al geçmişi yalnızca bellekte tutulur
-    localStorage.setItem(TABS_KEY, JSON.stringify({ tabs, active: activeTab, seq: tabSeq }, (k, v) => (k === 'undo' || k === 'redo' ? undefined : v)));
+    store.set(TABS_KEY, JSON.stringify({ tabs, active: activeTab, seq: tabSeq }, (k, v) => (k === 'undo' || k === 'redo' ? undefined : v)));
   } catch (e) {
     toast('Tarayıcı belleğine yazılamadı: ' + e.message, true);
   }
@@ -1125,12 +1272,15 @@ function newBlankTab() {
   const il = toIL({ rungs: [newRung()], labels: {} });
   openInNewTab('Yeni devre ' + tabSeq++, il);
 }
-function closeTab(i) {
+async function closeTab(i) {
   const t = tabs[i];
   if (!t) return;
   if (isDirty(t) || (!t.savedAs && t.il.split('\n').length > 4)) {
-    if (!confirm(`"${t.name}" kaydedilmedi. Yine de kapatılsın mı?\n(Kaydetmek için İptal → 💾 Kaydet)`)) return;
+    const ok = await askConfirm('Sekme kapatılsın mı?', `"${t.name}" kaydedilmedi; kapatırsan değişiklikler kaybolur.\nSaklamak için Vazgeç'e bas, sonra Kaydet (Ctrl+S).`, { okText: 'Kaydetmeden kapat', danger: true });
+    if (!ok) return;
   }
+  i = tabs.indexOf(t); // pencere açıkken sekme sırası değişmiş olabilir
+  if (i < 0) return;
   tabs.splice(i, 1);
   if (tabs.length === 0) {
     newBlankTab();
@@ -1140,32 +1290,33 @@ function closeTab(i) {
   else if (i === activeTab) { activeTab = Math.min(i, tabs.length - 1); loadTabProgram(); }
   else { renderTabs(); persistTabs(); }
 }
-function renameTab(i) {
+async function renameTab(i) {
   const t = tabs[i];
-  const n = prompt('Sekme adı:', t.name);
-  if (!n || !n.trim()) return;
-  t.name = n.trim();
+  if (!t) return;
+  const n = await askText('Sekmeyi yeniden adlandır', t.name);
+  if (!n) return;
+  t.name = n;
   persistTabs();
   renderTabs();
 }
 
 // ------------------------------------------------------------------ kayıtlar (program içi kütüphane)
 function lib() {
-  try { return JSON.parse(localStorage.getItem(LIB_KEY)) || {}; } catch (e) { return {}; }
+  try { return JSON.parse(store.get(LIB_KEY)) || {}; } catch (e) { return {}; }
 }
 function setLib(L) {
-  localStorage.setItem(LIB_KEY, JSON.stringify(L));
+  store.set(LIB_KEY, JSON.stringify(L));
 }
-function saveCurrent(asNew) {
+async function saveCurrent(asNew) {
   const t = tabs[activeTab];
-  const L = lib();
   let name = t.savedAs;
   if (!name || asNew) {
-    name = prompt('Kayıt adı:', asNew && t.savedAs ? t.savedAs + ' kopya' : t.name);
-    if (!name || !name.trim()) return;
-    name = name.trim();
-    if (L[name] && name !== t.savedAs && !confirm(`"${name}" adında bir kayıt zaten var. Üzerine yazılsın mı?`)) return;
+    name = await askText(asNew ? 'Farklı kaydet' : 'Kaydet', asNew && t.savedAs ? t.savedAs + ' kopya' : t.name, 'Kayıt adı:');
+    if (!name) return;
+    if (lib()[name] && name !== t.savedAs && !(await askConfirm('Üzerine yazılsın mı?', `"${name}" adında bir kayıt zaten var.`, { okText: 'Üzerine yaz', danger: true }))) return;
   }
+  if (tabs[activeTab] !== t) return; // pencere açıkken sekme değiştiyse yanlış devreyi kaydetme
+  const L = lib();
   L[name] = { il: toIL(prog), savedAt: Date.now() };
   setLib(L);
   t.savedAs = name;
@@ -1174,7 +1325,7 @@ function saveCurrent(asNew) {
   persistTabs();
   renderTabs();
   if ($('#lib').classList.contains('show')) renderLib();
-  toast('Kaydedildi: ' + name);
+  toast(store.ok ? 'Kaydedildi: ' + name : 'Kaydedildi (yalnızca bu oturumda): ' + name, !store.ok);
 }
 function downloadText(name, text, type) {
   const blob = new Blob([text], { type: type || 'text/plain' });
@@ -1198,7 +1349,7 @@ function renderLib() {
           return `<tr><td><b>${esc(n)}</b>${open ? ' <span class="badge">açık</span>' : ''}</td>
             <td class="muted">${new Date(L[n].savedAt).toLocaleString('tr-TR')}</td>
             <td class="muted">${rungs} satır</td>
-            <td class="acts"><button data-lopen="${esc(n)}">Aç</button><button data-lren="${esc(n)}">Ad değiştir</button><button data-ldl="${esc(n)}">.txt</button><button data-ldel="${esc(n)}" class="danger">Sil</button></td></tr>`;
+            <td class="acts"><button data-lopen="${esc(n)}">Aç</button><button data-lren="${esc(n)}">Ad değiştir</button><button data-ldl="${esc(n)}">.txt</button><button data-lshow="${esc(n)}" title="Metni göster / kopyala">Metin</button><button data-ldel="${esc(n)}" class="danger">Sil</button></td></tr>`;
         })
         .join('')
     : '<tr><td class="muted" colspan="4">Henüz kayıt yok. Bir devre kurup 💾 Kaydet\'e bas (Ctrl+S).</td></tr>';
@@ -1209,20 +1360,22 @@ function renderLib() {
     else openInNewTab(n, lib()[n].il, n);
     $('#lib').classList.remove('show');
   });
-  q('[data-lren]', (n) => {
-    const nn = prompt('Yeni ad:', n);
-    if (!nn || !nn.trim() || nn.trim() === n) return;
+  q('[data-lren]', async (n) => {
+    const nn = await askText('Kaydı yeniden adlandır', n, 'Yeni ad:');
+    if (!nn || nn === n) return;
+    if (lib()[nn] && !(await askConfirm('Üzerine yazılsın mı?', `"${nn}" adında bir kayıt zaten var.`, { okText: 'Üzerine yaz', danger: true }))) return;
     const L2 = lib();
-    if (L2[nn.trim()] && !confirm(`"${nn.trim()}" zaten var. Üzerine yazılsın mı?`)) return;
-    L2[nn.trim()] = L2[n];
+    if (!L2[n]) return;
+    L2[nn] = L2[n];
     delete L2[n];
     setLib(L2);
-    tabs.forEach((x) => { if (x.savedAs === n) { x.savedAs = nn.trim(); x.name = nn.trim(); } });
+    tabs.forEach((x) => { if (x.savedAs === n) { x.savedAs = nn; x.name = nn; } });
     persistTabs(); renderTabs(); renderLib();
   });
   q('[data-ldl]', (n) => downloadText(fileSafe(n) + '.txt', lib()[n].il.replace(/\n/g, '\r\n')));
-  q('[data-ldel]', (n) => {
-    if (!confirm(`"${n}" kaydı silinsin mi? (Açık sekme kapanmaz)`)) return;
+  q('[data-lshow]', (n) => showText(n, lib()[n].il));
+  q('[data-ldel]', async (n) => {
+    if (!(await askConfirm('Kayıt silinsin mi?', `"${n}" kaydı silinecek. Açık sekme kapanmaz.`, { okText: 'Sil', danger: true }))) return;
     const L2 = lib();
     delete L2[n];
     setLib(L2);
@@ -1232,8 +1385,8 @@ function renderLib() {
 }
 function importBackup(text) {
   let data;
-  try { data = JSON.parse(text); } catch (e) { alert('Yedek dosyası okunamadı (geçerli JSON değil).'); return; }
-  const src = data.library || data;
+  try { data = JSON.parse(text); } catch (e) { toast('Yedek okunamadı: geçerli bir .json yedeği değil', true); return; }
+  const src = (data && data.library) || data || {};
   const L = lib();
   let n = 0;
   for (const k in src) {
@@ -1257,7 +1410,7 @@ function toast(msg, bad) {
 }
 function restoreTabs() {
   try {
-    const s = JSON.parse(localStorage.getItem(TABS_KEY));
+    const s = JSON.parse(store.get(TABS_KEY));
     if (s && Array.isArray(s.tabs) && s.tabs.length) {
       tabs = s.tabs;
       activeTab = Math.min(s.active || 0, tabs.length - 1);
@@ -1267,10 +1420,10 @@ function restoreTabs() {
     }
   } catch (e) { /* bozuk kayıt: sıfırdan başla */ }
   // eski sürümden kalan tek devre varsa onu ilk sekme yap
-  const old = localStorage.getItem(STORE);
+  const old = store.get(STORE);
   if (old) {
     openInNewTab('Devre 1', old);
-    localStorage.removeItem(STORE);
+    store.remove(STORE);
   } else openInNewTab(PLC_EXAMPLES[0].name, PLC_EXAMPLES[0].il);
 }
 
@@ -1301,10 +1454,23 @@ function init() {
   $('#libSaveAs').onclick = () => saveCurrent(true);
   $('#libSave').onclick = () => saveCurrent(false);
   $('#libTxt').onclick = () => downloadText(fileSafe(tabs[activeTab].name) + '.txt', toIL(prog).replace(/\n/g, '\r\n'));
+  const backupJson = () => JSON.stringify({ app: 'delta-plc-sim', library: lib() }, null, 2);
   $('#libExport').onclick = () => {
     const d = new Date();
     const stamp = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-    downloadText(`plc-kayitlar-${stamp}.json`, JSON.stringify({ app: 'delta-plc-sim', library: lib() }, null, 2), 'application/json');
+    downloadText(`plc-kayitlar-${stamp}.json`, backupJson(), 'application/json');
+  };
+  // İndirmenin engellendiği tarayıcılar için: metni göster / yapıştırarak yükle
+  $('#libShow').onclick = () => showText(tabs[activeTab].name, toIL(prog));
+  $('#libExportText').onclick = () => showText('Yedek (tüm kayıtlar)', backupJson(), 'Bu metni bir .json dosyasına yapıştırıp saklayabilir, sonra "Metin yapıştırarak yükle" ile geri alabilirsin.');
+  $('#libPaste').onclick = async () => {
+    const t = await openDialog({ title: 'Metin yapıştırarak yükle', msg: 'IL komut listesi (LD X0 …) yeni sekmede açılır; .json yedek metni kayıtlara eklenir.', text: '', placeholder: 'LD X0\nOUT Y0\nEND', okText: 'Yükle' });
+    if (!t || !t.trim()) return;
+    if (t.trim()[0] === '{') importBackup(t);
+    else {
+      openInNewTab('Yapıştırılan devre', t);
+      $('#lib').classList.remove('show');
+    }
   };
   $('#libImport').onclick = () => $('#fileJson').click();
   $('#fileJson').onchange = async (e) => {
@@ -1325,9 +1491,11 @@ function init() {
   };
   $('#bHelp').onclick = () => $('#help').classList.add('show');
   // pencereler: arka plana ya da "Kapat"a tıklayınca kapan
-  document.querySelectorAll('.modal').forEach((m) => {
+  // (#dlg kendi kapanışını yönetir; burada kapatılırsa bekleyen soru yanıtsız kalır)
+  document.querySelectorAll('.modal:not(#dlg)').forEach((m) => {
     m.addEventListener('click', (e) => { if (e.target === m || e.target.closest('[data-close]')) m.classList.remove('show'); });
   });
+  $('#storeWarnClose').onclick = () => $('#storeWarn').classList.remove('show');
   $('#ilApply').onclick = () => loadIL($('#il').value);
 
   // tema
@@ -1340,7 +1508,7 @@ function init() {
   $('#bTheme').onclick = () => {
     const t = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
     document.documentElement.dataset.theme = t;
-    localStorage.setItem('deltaPlcSim.theme', t);
+    store.set('deltaPlcSim.theme', t);
     setThemeIcon();
   };
 
@@ -1350,7 +1518,7 @@ function init() {
     const old = zoom;
     zoom = Math.round(Math.min(2, Math.max(0.5, z)) * 10) / 10;
     if (zoom === old) return;
-    localStorage.setItem('deltaPlcSim.zoom', zoom);
+    store.set('deltaPlcSim.zoom', zoom);
     // imlecin altındaki nokta yerinde kalsın
     const r = w.getBoundingClientRect();
     const ax = keepPt ? keepPt.x - r.left : r.width / 2, ay = keepPt ? keepPt.y - r.top : r.height / 2;
@@ -1458,6 +1626,10 @@ function init() {
   });
 
   restoreTabs();
+  if (!store.ok) {
+    storageFailed();
+    $('#libNote').textContent = 'Bu tarayıcı kayıtları kalıcı saklamıyor: kayıtlar yalnızca bu sayfa açıkken durur. Saklamak için "Yedeği metin olarak göster" ile kopyala ya da normal bir tarayıcı penceresinde aç.';
+  }
   requestAnimationFrame(loop);
 }
 init();
