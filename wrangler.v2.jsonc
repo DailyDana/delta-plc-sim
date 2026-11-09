@@ -1,0 +1,6 @@
+// v2 önizleme: node <wrangler> deploy -c wrangler.v2.jsonc (önce npm run build)
+{
+  "name": "delta-plc-sim-v2",
+  "compatibility_date": "2026-11-01",
+  "assets": { "directory": "./dist" }
+}

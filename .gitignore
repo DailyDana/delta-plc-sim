@@ -2,3 +2,6 @@ dagitim/
 test/*.html
 .wrangler/
 node_modules/
+dist/
+test-results/
+playwright-report/

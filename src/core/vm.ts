@@ -72,6 +72,10 @@ export class Machine {
 
   scanCount = 0;
   timeMs = 0;
+  /** Komut izi (accIn/accOut/closed) en az bir taramayla dolduruldu mu? (yeni kurulan makinede false) */
+  traced = false;
+  /** adoptState sonrası ilk tarama: bobin kenar belleği doldurulur, darbe/sayma üretilmez */
+  private priming = false;
 
   private readonly bstack: Uint8Array;
   private readonly mstack: Uint8Array;
@@ -164,6 +168,39 @@ export class Machine {
     this.edge.fill(p.risingOnStartup ? 0 : -1);
     this.scanCount = 0;
     this.timeMs = 0;
+    this.priming = false;
+    this.traced = false;
+  }
+
+  /**
+   * Çalışırken program değişti: eski makinenin cihaz belleğini ve zamanını devral (çevrimiçi düzenleme).
+   * Komut başına kenar belleği yeni programla sıfırdan başlar; ayar değerlerini yeni program belirler.
+   */
+  adoptState(old: Machine): void {
+    const copy = (dst: { length: number; [i: number]: number }, src: { length: number; [i: number]: number }) => {
+      const n = Math.min(dst.length, src.length);
+      for (let i = 0; i < n; i++) dst[i] = src[i]!;
+    };
+    copy(this.inputs, old.inputs);
+    copy(this.X, old.X);
+    copy(this.Y, old.Y);
+    copy(this.outputs, old.outputs);
+    copy(this.M, old.M);
+    copy(this.S, old.S);
+    copy(this.D, old.D);
+    copy(this.Tdone, old.Tdone);
+    copy(this.Tcv, old.Tcv);
+    copy(this.Tacc, old.Tacc);
+    copy(this.Cdone, old.Cdone);
+    copy(this.Ccv, old.Ccv);
+    this.scanCount = old.scanCount;
+    this.timeMs = old.timeMs;
+    // Kenar belleği: devralınan durumda "önceki = şimdiki" say ki düzenleme sahte kenar üretmesin;
+    // CNT/PLS/PLF de ilk taramada bobinin önceki durumunu şimdiki kabul eder (priming)
+    this.code.forEach((c, i) => {
+      if (c.cls === 'load' || c.cls === 'and' || c.cls === 'or') this.edge[i] = c.type !== null && this.read(c.type, c.index) ? 1 : 0;
+    });
+    this.priming = true;
   }
 
   /** Bit oku (T/C: kontak durumu). Özel M röleleri burada hesaplanır. */
@@ -270,6 +307,8 @@ export class Machine {
       this.accOut[i] = acc;
     }
     this.outputs.set(this.Y);
+    this.priming = false;
+    this.traced = true;
     this.scanCount++;
     this.timeMs += dt;
   }
@@ -328,20 +367,20 @@ export class Machine {
       case 'CNT': {
         const k = c.k < 1 ? 1 : c.k; // K0, K1 ile aynıdır (Delta EH3/SV2 kılavuzu s.2-19)
         this.Csv[idx] = k;
-        const prev = this.coilPrev[i]!;
+        const prev = this.priming ? (q ? 1 : 0) : this.coilPrev[i]!;
         this.coilPrev[i] = q ? 1 : 0;
         if (q && !prev && this.Ccv[idx]! < k) this.Ccv[idx]!++;
         this.Cdone[idx] = this.Ccv[idx]! >= k ? 1 : 0;
         break;
       }
       case 'PLS': {
-        const prev = this.coilPrev[i]!;
+        const prev = this.priming ? (q ? 1 : 0) : this.coilPrev[i]!;
         this.coilPrev[i] = q ? 1 : 0;
         this.write(c.type, idx, q && !prev);
         break;
       }
       case 'PLF': {
-        const prev = this.coilPrev[i]!;
+        const prev = this.priming ? (q ? 1 : 0) : this.coilPrev[i]!;
         this.coilPrev[i] = q ? 1 : 0;
         this.write(c.type, idx, !q && prev === 1);
         break;

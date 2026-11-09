@@ -106,6 +106,15 @@ export function parseIl(text: string, profile: Profile = getProfile()): ParseRes
   return { program: { instrs, labels }, diagnostics };
 }
 
+/** Tek bir komutun işlenenlerini denetler (düzenleyicideki anlık hata gösterimi için) */
+export function checkInstrOperands(mn: string, ops: readonly string[], profile: Profile = getProfile()): Diagnostic[] {
+  const def = INSTRUCTIONS[mn];
+  if (!def) return [diag('E_UNKNOWN_OP', `Bilinmeyen komut: ${mn}`)];
+  const out: Diagnostic[] = [];
+  def.operands.forEach((spec, i) => checkOperand(mn, spec.kinds, (ops[i] ?? '').trim(), profile, out, { line: 0, instr: 0 }));
+  return out;
+}
+
 function checkOperand(
   mn: string,
   kinds: readonly string[],

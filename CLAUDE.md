@@ -1,14 +1,22 @@
 # Delta PLC Simülatör — ajan rehberi
 
 Tarayıcıda çalışan Delta DVP ladder simülatörü. Yayın: https://delta-plc-sim.delidana-lab.workers.dev (Cloudflare Workers, statik).
-Yol haritası: `C:\Users\bilge\.claude\plans\program-senin-ok-rahat-sleepy-eich.md` (Aşama 0–1 bitti; sırada Aşama 2: React/Vite IDE arayüzü).
+Yol haritası: `C:\Users\bilge\.claude\plans\program-senin-ok-rahat-sleepy-eich.md` (Aşama 0–1 bitti; Aşama 2 v2 IDE önizlemede, geçiş kullanıcı onayı bekliyor).
 
-## İki katman
+## Katmanlar
 
-- **v1 arayüzü (yayındaki):** `index.html`, `app.js`, `plc-core.js`, `examples.js`. Derleme yok. Tarayıcı testleri `test/` + `tools/test.js`.
+- **v1 arayüzü (ana adreste yayındaki):** `index.html`, `app.js`, `plc-core.js`, `examples.js`. Derleme yok. Tarayıcı testleri `test/` + `tools/test.js`.
+  Geçişe (kullanıcı onayı) kadar ana adreste kalır; geçişte `legacy/` altına taşınacak.
 - **v2 çekirdeği (TypeScript):** `src/core/` — IL ayrıştırıcı + statik analiz (`il.ts`), komut komut çalışan sanal makine (`vm.ts`),
-  ladder ağacı ↔ IL (`ladder.ts`, iç içe MPS destekli), model profilleri (`profiles.ts`: ES2, SS2, EH3, v1), `simulate.ts`, `textdraw.ts`.
-  CLI: `src/cli/plc.ts`. Testler: `tests/*.test.ts` (vitest). v1 arayüzü henüz bu çekirdeği kullanmıyor (Aşama 2'de bağlanacak).
+  ladder ağacı ↔ IL (`ladder.ts`, iç içe MPS, kaynak eşlemesi `ladderToIlMapped`/`mapProgramToLadder`), model profilleri (`profiles.ts`: ES2, SS2, EH3, v1),
+  `simulate.ts`, `textdraw.ts`. CLI: `src/cli/plc.ts`. Testler: `tests/*.test.ts` (vitest).
+- **v2 arayüzü (React + Vite + Zustand + CodeMirror):** kök `web/index.html` → `src/ui/main.tsx`. Önizleme: https://delta-plc-sim-v2.delidana-lab.workers.dev
+  - `src/ui/state/store.ts`: tek durum. Sekmenin asıl verisi **IL metni**; ladder ondan türetilir (`deriveDoc`). Ladder düzenlemesi `editLadder(fn)` ile
+    kopya ağaç üzerinde yapılır (kimlikler korunur, seçim geçerli kalır), IL yeniden yazılır. Geri al yığını IL metinleridir.
+  - `src/ui/state/edit.ts`: saf ağaç işlemleri (ekle/sil/taşı/sürükle-bırak/pano, `tidy`). `persist.ts`: localStorage → bellek yedeği, v1 kayıt aktarımı.
+  - `src/ui/sim/engine.ts`: gerçek zamanlı tarama döngüsü, kısa basış kilidi, STOP→RUN'da kalıcı bölge korunumu, çalışırken düzenlemede bellek devri (`Machine.adoptState`).
+  - `src/ui/ladder/`: `layout.ts` (sahne + bırakma noktaları), `power.ts` (canlı akım; VM izi `closed[]` üzerinden), `LadderView.tsx` (canlı görünüm React'siz, DOM sınıflarıyla), `drag.ts`, `quick.ts` (Enter ile komut yazarak ekleme).
+  - `src/ui/api.ts`: `window.plc` (ve v1 uyumu için `window.PLC.app`).
 
 ## Bir devreyi doğrulamak / kullanıcıya göstermek
 
@@ -33,18 +41,25 @@ Model: `--model ES2|SS2|EH3|v1` (varsayılan ES2). v1 profili yalnızca eski dav
   OUT, SET, RST, TMR Tn Kn, CNT Cn Kn, PLS, PLF, END, NOP. (MOV/CMP/MC/STL vb. Aşama 3'te.)
 - Ladder'a çevrilemeyen ama çalışan kalıp: çıkıştan sonra OR (`L_OR_AFTER_OUTPUT`).
 
-## Tarayıcıda sürmek (v1): `PLC.app`
+## Tarayıcıda sürmek: `window.plc` (v2) / `PLC.app` (v1)
 
-`load(il, ad)`, `set('X0', 1)`, `press('X0', ms)`, `advance(ms)` (belirlenimli), `run()/pause()/stop()`, `state()` → `{ mode, scan, t, Y0: 1, T0: '25/100' }`, `getIL()`.
+`load(il, ad)`, `set('X0', 1)`, `press('X0', ms)`, `advance(ms)` (belirlenimli), `run()/pause()/stop()/step()/powerCycle()`, `state()` → `{ mode, scan, t, Y0: 1, T0: '25/100' }`, `getIL()`.
+v2'de ayrıca `getLadder()` (metin çizim), `diagnostics()`, `model('EH3')`. Testler için `window.__engine` (`rewindClock`, `tick`) ve `window.__store`.
 
 ## Test ve yayın
 
 ```bash
-npm run typecheck && npm test      # TS çekirdek: 55 test (300 rastgele devrelik v1 eşdeğerlik testi dahil)
+npm run typecheck && npm test      # TS: çekirdek + düzenleme işlemleri (300 rastgele devrelik v1 eşdeğerlik testi dahil)
+npm run e2e                        # v2: vite build + Playwright (Edge headless) uçtan uca
 node tools/test.js                 # v1 çekirdek + headless Edge tarayıcı testleri (68 kontrol)
-node tools/tek-dosya.js            # dagitim/Delta-PLC-Simulator.html (tek dosya, release için)
-node D:/Projects/poz-galerisi-web/node_modules/wrangler/bin/wrangler.js deploy   # Cloudflare (wrangler genel kurulu değil)
+node tools/tek-dosya.js            # dagitim/Delta-PLC-Simulator.html (v1 tek dosya, release için)
+npm run dev                        # v2 geliştirme sunucusu (http://localhost:5173)
+node D:/Projects/poz-galerisi-web/node_modules/wrangler/bin/wrangler.js deploy                       # v1 → ana adres
+npm run build && node D:/Projects/poz-galerisi-web/node_modules/wrangler/bin/wrangler.js deploy -c wrangler.v2.jsonc   # v2 → önizleme
 ```
+
+- v2 görsel kontrol: Playwright ile headless ekran görüntüsü al (ekranı yakalama). Koyu temada görüntüleyici renkleri parlak gösterebilir; şüphede pikseli PIL ile oku.
+- `dist/` e2e testlerinin kullandığı çıktıdır; paralel çalışırken kendi denemeni ayrı klasöre derle (`vite build --outDir <scratch>`).
 
 - Headless Edge'i Git Bash'ten doğrudan başlatma (sessizce çıktı vermez); `tools/test.js` PowerShell `Start-Process` kullanır, her sayfaya yeni profil klasörü verir.
 - Test sürücüleri (`test/drive-*.js`) `app.js` ile aynı global alanı paylaşır: app.js'te `tick` gibi genel adlar kullanma.

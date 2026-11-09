@@ -59,15 +59,37 @@ export function cloneSeries(s: Series): Series {
   return s.map((b) => (b.t === 'c' ? contact(b.kind, b.op) : parallel(b.branches.map(cloneSeries))));
 }
 
+/** Kimlikleri koruyarak derin kopya (düzenleyici değişmez durum için kullanır) */
+export function cloneLadder(l: Ladder): Ladder {
+  const s = (x: Series): Series => x.map((b) => (b.t === 'c' ? { ...b } : { t: 'p', id: b.id, branches: b.branches.map(s) }));
+  const o = (b: OutBranch): OutBranch => {
+    const n: OutBranch = { id: b.id, pre: s(b.pre) };
+    if (b.coil) n.coil = { ...b.coil };
+    if (b.children) n.children = b.children.map(o);
+    return n;
+  };
+  return { labels: { ...l.labels }, rungs: l.rungs.map((r) => ({ id: r.id, comment: r.comment, input: s(r.input), outputs: r.outputs.map(o) })) };
+}
+
 // ------------------------------------------------------------------ ağaç → IL
+/** Satır yazıcı: her IL satırının hangi ladder öğesinden geldiği (kontak id'si ya da bobinli dal id'si) */
+class Out {
+  lines: string[] = [];
+  refs: (string | undefined)[] = [];
+  push(line: string, ref?: string): void {
+    this.lines.push(line);
+    this.refs.push(ref);
+  }
+}
+
 function contactLine(c: Contact, pos: 0 | 1 | 2): string {
   return CONTACT_MNEMONICS[c.kind][pos] + ' ' + c.op;
 }
 
-function genSeries(series: Series, out: string[], mode: 'load' | 'and'): void {
+function genSeries(series: Series, out: Out, mode: 'load' | 'and'): void {
   series.forEach((b, j) => {
     const first = j === 0 && mode === 'load';
-    if (b.t === 'c') out.push(contactLine(b, first ? 0 : 1));
+    if (b.t === 'c') out.push(contactLine(b, first ? 0 : 1), b.id);
     else {
       genPar(b, out);
       if (!first) out.push('ANB');
@@ -75,10 +97,10 @@ function genSeries(series: Series, out: string[], mode: 'load' | 'and'): void {
   });
 }
 
-function genPar(p: Parallel, out: string[]): void {
+function genPar(p: Parallel, out: Out): void {
   p.branches.forEach((br, k) => {
     const only = br[0];
-    if (k > 0 && br.length === 1 && only && only.t === 'c') out.push(contactLine(only, 2));
+    if (k > 0 && br.length === 1 && only && only.t === 'c') out.push(contactLine(only, 2), only.id);
     else {
       genSeries(br, out, 'load');
       if (k > 0) out.push('ORB');
@@ -94,13 +116,13 @@ function coilLine(c: Coil): string {
   return `${c.type} ${c.op}`;
 }
 
-function genBranchBody(b: OutBranch, out: string[]): void {
+function genBranchBody(b: OutBranch, out: Out): void {
   genSeries(b.pre, out, 'and');
   if (b.children && b.children.length) genOutputs(b.children, out);
-  else if (b.coil) out.push(coilLine(b.coil));
+  else if (b.coil) out.push(coilLine(b.coil), b.id);
 }
 
-function genOutputs(list: OutBranch[], out: string[]): void {
+function genOutputs(list: OutBranch[], out: Out): void {
   // Dallarda ek kontak ya da alt dal yoksa bobinler art arda yazılır; varsa MPS/MRD/MPP gerekir
   const needStack = list.length > 1 && list.some((b) => b.pre.length || (b.children && b.children.length));
   if (!needStack) {
@@ -116,18 +138,26 @@ function genOutputs(list: OutBranch[], out: string[]): void {
 
 /** Ladder → IL metni (v1'in toIL çıktısıyla birebir aynı biçim) */
 export function ladderToIl(l: Ladder): string {
-  const lines: string[] = [];
-  for (const k of Object.keys(l.labels)) if (l.labels[k]) lines.push(`#${k} ${l.labels[k]}`);
-  if (lines.length) lines.push('');
+  return ladderToIlMapped(l).text;
+}
+
+/**
+ * Ladder → IL + kaynak eşlemesi: refs[i] = IL'nin i. satırını (0'dan) üreten öğe.
+ * Kontak satırları kontak id'sine, bobin satırları bobinin bulunduğu çıkış dalının id'sine bağlanır.
+ */
+export function ladderToIlMapped(l: Ladder): { text: string; refs: (string | undefined)[] } {
+  const out = new Out();
+  for (const k of Object.keys(l.labels)) if (l.labels[k]) out.push(`#${k} ${l.labels[k]}`);
+  if (out.lines.length) out.push('');
   l.rungs.forEach((r, i) => {
-    if (r.comment) r.comment.split('\n').forEach((c) => lines.push('; ' + c));
-    else lines.push(`; --- satır ${i + 1}`);
-    if (r.input.length === 0) lines.push('LD M1000');
-    else genSeries(r.input, lines, 'load');
-    genOutputs(r.outputs, lines);
+    if (r.comment) r.comment.split('\n').forEach((c) => out.push('; ' + c));
+    else out.push(`; --- satır ${i + 1}`);
+    if (r.input.length === 0) out.push('LD M1000');
+    else genSeries(r.input, out, 'load');
+    genOutputs(r.outputs, out);
   });
-  lines.push('END');
-  return lines.join('\n');
+  out.push('END');
+  return { text: out.lines.join('\n'), refs: out.refs };
 }
 
 // ------------------------------------------------------------------ IL → ağaç
@@ -277,6 +307,26 @@ export function ilToLadder(program: IlProgram): { ladder: Ladder | null; diagnos
 
   const failedAny = diagnostics.some((d) => d.code.startsWith('L_'));
   return { ladder: failedAny ? null : { rungs, labels: { ...program.labels } }, diagnostics };
+}
+
+/**
+ * Programın her komutunu ladder öğesine bağlar (canlı akım gösterimi için).
+ * Program, ladder'dan üretilecek IL ile komut komut aynıysa eşleme döner; değilse (kullanıcı IL'i
+ * farklı ama eşdeğer yazmışsa) null döner ve arayüz cihaz durumlarından yaklaşık gösterime düşer.
+ */
+export function mapProgramToLadder(program: IlProgram, l: Ladder, profile: Profile = getProfile()): (string | undefined)[] | null {
+  const gen = ladderToIlMapped(l);
+  const g = parseIl(gen.text, profile).program.instrs;
+  const u = program.instrs;
+  if (g.length !== u.length) return null;
+  const key = (it: IlProgram['instrs'][number]) =>
+    it.mn + ' ' + it.ops.map((o) => (o.addr ? o.addr.type + o.addr.index : o.k !== undefined ? 'K' + o.k : o.raw.toUpperCase())).join(' ');
+  const refs: (string | undefined)[] = [];
+  for (let i = 0; i < u.length; i++) {
+    if (key(u[i]!) !== key(g[i]!)) return null;
+    refs.push(gen.refs[g[i]!.line - 1]);
+  }
+  return refs;
 }
 
 /** IL metni → ladder (ayrıştırma + dönüşüm) */

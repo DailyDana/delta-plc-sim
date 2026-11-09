@@ -38,7 +38,8 @@ export type DiagCode =
 
 export const diag = (code: DiagCode, message: string, at: Partial<Pick<Diagnostic, 'line' | 'instr' | 'rung'>> = {}): Diagnostic => ({
   code,
-  severity: code.startsWith('W_') ? 'warning' : 'error',
+  // L_: program çalışır, yalnızca ladder olarak çizilemez → uyarı
+  severity: code.startsWith('W_') || code.startsWith('L_') ? 'warning' : 'error',
   message,
   ...at,
 });
