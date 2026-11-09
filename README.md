@@ -4,6 +4,8 @@ Tarayıcıda çalışan basit bir ladder (merdiven) diyagramı simülatörü. De
 
 **Canlı:** https://delta-plc-sim.delidana-lab.workers.dev (yedek: https://dailydana.github.io/delta-plc-sim/)
 
+**Yeni sürüm (önizleme):** https://delta-plc-sim-v2.delidana-lab.workers.dev. IDE düzeni, IL düzenleyici, izleme tablosu, gerçek model zamanlayıcıları, klavyeyle devre kurma. Denendikten sonra ana adrese geçecek; eski kayıtlar otomatik aktarılır.
+
 Kurulum gerekmez. İnternetsiz kullanmak için [Releases](https://github.com/DailyDana/delta-plc-sim/releases) sayfasından tek dosyalık sürümü indirip çift tıklamak yeterli.
 
 ## Neler var
@@ -25,11 +27,15 @@ Tarayıcı arayüzü şimdilik sadeleştirilmiş tabloyu kullanır: T0–T199 10
 
 Tarayıcı arayüzü (v1) derleme adımı olmadan çalışır: `index.html`, `plc-core.js`, `app.js`, `examples.js`.
 
+Yeni arayüz (v2) React + Vite + Zustand + CodeMirror ile `src/ui/` altında; giriş `web/index.html`.
+
 Yeni çekirdek (v2) TypeScript ile `src/core/` altında: IL ayrıştırıcı ve statik analiz, gerçek PLC gibi komut komut çalışan sanal makine, ladder ↔ IL dönüşümü (iç içe MPS), Delta kılavuzlarından alınmış model profilleri (ES2, SS2, EH3). Arayüz Aşama 2'de bu çekirdeğe geçecek.
 
 ```
 npm install
-npm test                      # çekirdek testleri (v1 ile 300 rastgele devrelik eşdeğerlik testi dahil)
+npm run dev                   # v2 geliştirme sunucusu
+npm test                      # çekirdek ve düzenleme testleri (v1 ile 300 rastgele devrelik eşdeğerlik testi dahil)
+npm run e2e                   # v2 uçtan uca testler (Playwright, Edge)
 npm run typecheck
 node tools/test.js            # tarayıcı testleri (headless Edge)
 node tools/tek-dosya.js       # dagitim/Delta-PLC-Simulator.html (tek dosya sürüm)
@@ -47,7 +53,7 @@ npm run plc -- link devre.txt --run
 
 ### Dışarıdan sürmek (`PLC.app`)
 
-Tarayıcı konsolundan ya da Playwright gibi araçlardan:
+Tarayıcı konsolundan ya da Playwright gibi araçlardan (v2'de `window.plc` da aynı):
 
 ```js
 PLC.app.load("LD X0\nOR Y0\nANI X1\nOUT Y0", "mühürleme")
