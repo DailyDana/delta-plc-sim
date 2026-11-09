@@ -306,9 +306,17 @@ function buildIO() {
     });
   });
 }
+// Kısa basış kilidi: basış, PLC en az bir tarama boyunca görene kadar tutulur. Yoksa iki tarama
+// arasında basılıp bırakılan bir buton (hızlı tıklama, klavyede hızlı tuş) hiç görülmez; mühürleme
+// ve sayıcılar "çalışmıyor" gibi görünür. Duraklatılmışken yapılan basış da bir sonraki Adım'da görülür.
+const pulse = {};
 function setInput(x, v) {
   inputs[x] = v;
+  if (v) pulse[x] = true;
   updatePanels();
+}
+function clearPulses() {
+  for (const k in pulse) delete pulse[k];
 }
 function updatePanels() {
   const live = mode !== 'stop';
@@ -348,7 +356,7 @@ function usedDevices() {
   prog.rungs.forEach((r) => { walk(r.input); r.outputs.forEach((o) => { walk(o.pre); set.add(o.coil.op); }); });
   const num = (a) => parseInt(a.slice(1), 10);
   const pick = (d) => [...set].filter((o) => o && o[0] === d && /^\w\d+$/.test(o)).sort((a, b) => num(a) - num(b));
-  return { M: pick('M'), S: pick('S'), T: pick('T'), C: pick('C') };
+  return { X: pick('X'), Y: pick('Y'), M: pick('M'), S: pick('S'), T: pick('T'), C: pick('C') };
 }
 function buildDevices() {
   const u = usedDevices();
@@ -1067,26 +1075,50 @@ function loadIL(text, quiet) {
 function stop() {
   mode = 'stop';
   sim.reset();
+  clearPulses();
   updateView();
+}
+// STOP'tan çalışmaya geçiş: PLC sıfırdan başlar; STOP'tayken yapılan basışlar sayılmaz (gerçek PLC gibi)
+function startFromStop() {
+  sim.reset();
+  clearPulses();
 }
 
 // ------------------------------------------------------------------ çalışma döngüsü
+// Simülasyon zamanı ekran karelerinden (requestAnimationFrame) bağımsız ilerler: tarayıcı kareleri
+// seyrek çizse de (arka plan sekmesi, küçültülmüş ya da gömülü pencere) geçen gerçek süre kadar
+// taranır. Ekran yalnızca requestAnimationFrame'de, durum değiştiyse yenilenir.
+const MAX_CATCHUP_MS = 60000; // uzun uyku/askıdan dönüşte en çok 60 s yetiştir (sonrası "duraklamış" sayılır)
+const MAX_SCANS_PER_TICK = 8000;
 let last = performance.now();
+let viewDirty = false;
 function scanOnce(dt) {
-  for (const x of XS) sim.bits[x] = !!inputs[x];
+  for (const x of XS) sim.bits[x] = !!inputs[x] || !!pulse[x];
   sim.runScan(prog, dt);
+  clearPulses();
 }
-function loop(now) {
-  const real = Math.min(now - last, 200);
+function simTick(now) {
+  if (now === undefined) now = performance.now();
+  const real = Math.min(Math.max(0, now - last), MAX_CATCHUP_MS);
   last = now;
-  if (mode === 'run') {
-    const total = real * speed;
-    const n = Math.max(1, Math.min(200, Math.ceil(total / 10)));
-    for (let i = 0; i < n; i++) scanOnce(total / n);
+  if (mode !== 'run') return;
+  const total = real * speed;
+  if (total <= 0) return;
+  // ~10 ms'lik taramalar; çok uzun aralıkta tarama sayısı sınırlanır, her tarama biraz uzar
+  const n = Math.max(1, Math.min(MAX_SCANS_PER_TICK, Math.ceil(total / 10)));
+  for (let i = 0; i < n; i++) scanOnce(total / n);
+  viewDirty = true;
+}
+function loop() {
+  simTick();
+  if (viewDirty) {
+    viewDirty = false;
     updateView();
   }
   requestAnimationFrame(loop);
 }
+// requestAnimationFrame seyrekleştiğinde de zaman aksın diye ayrıca zamanlayıcıyla sür
+setInterval(() => simTick(), 16);
 
 // ------------------------------------------------------------------ uygulama içi diyaloglar
 // Tarayıcının prompt()/confirm()/alert() pencereleri gömülü tarayıcılarda (ör. Claude uygulaması)
@@ -1438,10 +1470,14 @@ function init() {
     openInNewTab(ex.name, ex.il);
     sel.value = '';
   };
-  $('#bRun').onclick = () => { if (mode === 'stop') sim.reset(); mode = 'run'; updateView(); };
-  $('#bPause').onclick = () => { if (mode === 'run') mode = 'pause'; else if (mode === 'pause') mode = 'run'; updateView(); };
+  $('#bRun').onclick = () => { if (mode === 'stop') startFromStop(); last = performance.now(); mode = 'run'; updateView(); };
+  $('#bPause').onclick = () => {
+    if (mode === 'run') { simTick(); mode = 'pause'; }
+    else if (mode === 'pause') { last = performance.now(); mode = 'run'; }
+    updateView();
+  };
   $('#bStep').onclick = () => {
-    if (mode === 'stop') sim.reset();
+    if (mode === 'stop') startFromStop();
     mode = 'pause';
     scanOnce(100);
     updateView();
@@ -1632,5 +1668,86 @@ function init() {
   }
   requestAnimationFrame(loop);
 }
+
+// ------------------------------------------------------------------ dış API: PLC.app
+// Arayüzü dışarıdan (tarayıcı konsolu, Playwright, ajanlar, testler) sürmek için tek giriş noktası.
+// Sonuçlar ekrandaki metinden ayıklanmak yerine state() ile düz bir nesne olarak alınır.
+//   PLC.app.load(il, ad)    yeni sekmede aç → { ok, errors | warnings, rungs }
+//   PLC.app.press('X0', ms) belirlenimli bas-bırak (ms boyunca basılı, sonra bırakıp 1 tarama)
+//   PLC.app.set('X1', 1)    girişi aç/kapat
+//   PLC.app.advance(ms)     gerçek zamandan bağımsız ms kadar tara (duraklatılmış kipe geçer)
+//   PLC.app.run() / pause() / stop()
+//   PLC.app.state()         { mode, scan, t, X0: 1, Y0: 1, M0: 0, T0: '25/100', C0: '3/5', ... }
+//   PLC.app.getIL()         açık devrenin komut listesi
+PLC.app = {
+  load(il, name) {
+    const r = parseIL(String(il));
+    const hard = r.errors.filter((e) => !e.warn);
+    if (hard.length) return { ok: false, errors: hard };
+    openInNewTab(name || 'Dışarıdan yüklenen', String(il));
+    return { ok: true, warnings: r.errors.filter((e) => e.warn), rungs: prog.rungs.length };
+  },
+  getIL() {
+    return toIL(prog);
+  },
+  run() {
+    $('#bRun').click();
+    return this.state();
+  },
+  pause() {
+    if (mode === 'run') $('#bPause').click();
+    return this.state();
+  },
+  stop() {
+    stop();
+    return this.state();
+  },
+  set(x, v) {
+    x = String(x).toUpperCase();
+    if (!XS.includes(x)) throw new Error(`Geçersiz giriş: ${x} (X0–X7, X10–X17)`);
+    setInput(x, !!v);
+    return this.state();
+  },
+  advance(ms) {
+    if (mode === 'stop') startFromStop();
+    else if (mode === 'run') simTick();
+    mode = 'pause';
+    let left = Math.max(0, Number(ms) || 0);
+    if (!left) scanOnce(10);
+    while (left > 0) {
+      const dt = Math.min(10, left);
+      scanOnce(dt);
+      left -= dt;
+    }
+    updateView();
+    return this.state();
+  },
+  press(x, ms) {
+    this.set(x, 1);
+    this.advance(ms == null ? 100 : ms);
+    this.set(x, 0);
+    return this.advance(10);
+  },
+  state() {
+    const live = mode !== 'stop';
+    const o = { mode, scan: sim.scan, t: Math.round(sim.timeMs) / 1000 };
+    const u = usedDevices();
+    const xs = new Set([...u.X, ...XS.filter((x) => inputs[x])]);
+    const ys = new Set([...u.Y, ...YS.filter((y) => live && sim.bits[y])]);
+    xs.forEach((x) => (o[x] = inputs[x] ? 1 : 0));
+    ys.forEach((y) => (o[y] = live && sim.bits[y] ? 1 : 0));
+    [...u.M, ...u.S].forEach((m) => (o[m] = live && sim.get(m) ? 1 : 0));
+    u.T.forEach((t) => {
+      const v = sim.T[t];
+      o[t] = `${v ? v.cv : 0}/${v && v.sv != null ? v.sv : svOf(t)}`;
+    });
+    u.C.forEach((c) => {
+      const v = sim.C[c];
+      o[c] = `${v ? v.cv : 0}/${v && v.sv != null ? v.sv : svOf(c)}`;
+    });
+    return o;
+  },
+};
+
 init();
 window.PLC_APP_OK = true;

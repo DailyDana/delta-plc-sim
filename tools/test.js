@@ -13,7 +13,7 @@ const { spawnSync } = require('child_process');
 const root = path.join(__dirname, '..');
 const EDGE = 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe';
 // sayfa → beklenen: ok satırı en az kaç olmalı (eksik çalışmayı yakalamak için)
-const PAGES = { 'drag.html': 14, 'tabs.html': 19, 'kisitli.html': 13 };
+const PAGES = { 'drag.html': 14, 'tabs.html': 19, 'kisitli.html': 13, 'api.html': 18 };
 
 let failed = false;
 const say = (s) => process.stdout.write(s + '\n');

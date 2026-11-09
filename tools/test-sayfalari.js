@@ -11,6 +11,7 @@ const pages = {
   'drag.html': 'drive-drag.js', 'drag-dark.html': 'drive-drag.js', 'tabs.html': 'drive-tabs.js',
   'pano.html': 'drive-pano.js', 'shot0.html': 'drive.js', 'shot1.html': 'drive.js', 'shot3.html': 'drive.js', 'shot6.html': 'drive.js',
   'kisitli.html': { driver: 'drive-kisitli.js', pre: 'pre-kisitli.js' },
+  'api.html': 'drive-api.js',
   'dlg.html': { driver: 'drive-dlg.js', pre: 'pre-kisitli.js' },
 };
 for (const [page, spec] of Object.entries(pages)) {

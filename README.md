@@ -26,11 +26,25 @@ T0–T199 100 ms, T200–T239 10 ms, T240–T255 1 ms tabanlı (`TMR T0 K50` = 5
 Derleme adımı yok: `index.html`, `plc-core.js` (IL ayrıştırıcı ve tarama motoru), `app.js` (arayüz), `examples.js`.
 
 ```
-node test/test-core.js        # çekirdek testleri
+node tools/test.js            # tüm testler (çekirdek + headless Edge)
+node test/test-core.js        # yalnızca çekirdek testleri
 node tools/tek-dosya.js       # dagitim/Delta-PLC-Simulator.html (tek dosya sürüm)
 node tools/test-sayfalari.js  # test/*.html sayfalarını üretir (headless tarayıcı testleri için)
 npx wrangler deploy           # Cloudflare'e yayınla
 ```
+
+### Dışarıdan sürmek (`PLC.app`)
+
+Tarayıcı konsolundan ya da Playwright gibi araçlardan:
+
+```js
+PLC.app.load("LD X0\nOR Y0\nANI X1\nOUT Y0", "mühürleme")
+PLC.app.press("X0", 100)   // belirlenimli bas-bırak
+PLC.app.advance(5000)       // gerçek zamandan bağımsız 5 s tara
+PLC.app.state()             // { mode, scan, t, X0: 0, Y0: 1, T0: "25/100", ... }
+```
+
+Ayrıca `set(x, v)`, `run()`, `pause()`, `stop()`, `getIL()`.
 
 Delta Electronics ile bir bağlantısı yoktur; "Delta" ve "DVP" adları yalnızca komut setini tarif etmek için geçer.
 
