@@ -1,0 +1,15 @@
+#X2 kapı sensörü
+#X3 alarm reset
+#Y0 alarm lambası
+#Y1 kapı açık
+; Dene: X2'ye kısa bas; bırakınca da alarm yanık kalır, X3 söndürür
+; Kapı bir an açılsa bile SET alarmı hatırlar
+LD X2
+SET Y0
+; Reset butonu alarmı siler
+LD X3
+RST Y0
+; Karşılaştırma: OUT ile yapılan lamba sensör bırakılınca hemen söner (hafızası yok)
+LD X2
+OUT Y1
+END

@@ -1,0 +1,14 @@
+#X0 start
+#X1 stop
+#Y0 motor
+; Dene: X0'a bir kez bas; motor 5 s çalışıp kendi durur, X1 erken durdurur
+LD X0
+SET Y0
+; Motor çalıştıkça T0 sayar (5 s)
+LD Y0
+TMR T0 K50
+; Süre dolunca ya da stop'a basılınca motor sıfırlanır
+LD T0
+OR X1
+RST Y0
+END

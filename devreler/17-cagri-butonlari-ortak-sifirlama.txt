@@ -1,0 +1,23 @@
+#X0 oda 1 çağrı
+#X1 oda 2 çağrı
+#X2 oda 3 çağrı
+#X3 sıfırla
+#Y0 oda 1 lamba
+#Y1 oda 2 lamba
+#Y2 oda 3 lamba
+; Dene: X0, X1, X2'ye bas; lambalar yanık kalır, X3 hepsini söndürür
+; Oda 1 çağrısı: SET lambayı yakar ve tutar
+LD X0
+SET Y0
+; Oda 2 çağrısı
+LD X1
+SET Y1
+; Oda 3 çağrısı
+LD X2
+SET Y2
+; Tek butonla ortak sıfırlama: bir koşul, üç RST
+LD X3
+RST Y0
+RST Y1
+RST Y2
+END

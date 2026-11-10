@@ -1,0 +1,19 @@
+#X0 start
+#X1 stop
+#Y0 stop öncelikli
+#Y1 start öncelikli
+; Dene: X0 iki lambayı yakar, X1 söndürür; sonra ikisine birlikte bas
+; (birlikte basmak için X1'i sağ tıkla kilitle, sonra X0'a bas)
+; Aynı taramada hem SET hem RST çalışırsa programda SONRA yazılan kazanır
+LD X0
+SET Y0
+; Y0'da RST sonra yazıldı: ikisine birden basılınca Y0 SÖNER (stop öncelikli)
+LD X1
+RST Y0
+; Y1'de sıra ters: önce RST, sonra SET
+LD X1
+RST Y1
+; SET sonra yazıldı: ikisine birden basılınca Y1 YANAR (start öncelikli)
+LD X0
+SET Y1
+END

@@ -62,4 +62,24 @@ export const EXAMPLES: readonly Example[] = [
     name: "Koli sayma ve paketleme",
     il: "#X0 start\n#X1 stop\n#X2 şişe sensörü\n#Y0 konveyör\n#Y1 paketleme\n; Dene: X0 hattı çalıştırır; X2'ye 6 kez bas, koli dolunca paketleme 3 s\n; Paketlemede konveyör durur, bitince kendiliğinden yeniden döner\nLD X0\nOR M0\nANI X1\nOUT M0\n; Konveyör, hat çalışırken ve paketleme yokken döner\nLD M0\nANI Y1\nOUT Y0\n; Konveyör dönerken geçen her şişe sayılır (6 şişe = 1 koli)\nLD X2\nAND Y0\nCNT C0 K6\n; Koli doldu: paketleme motoru 3 s çalışır\nLD C0\nOUT Y1\nTMR T0 K30\n; Süre bitti ya da stop: sayıcı sıfırlanır, konveyör yeniden döner\nLD T0\nOR X1\nRST C0\nEND",
   },
+  {
+    name: "SET/RST önceliği (son yazan kazanır)",
+    il: "#X0 start\n#X1 stop\n#Y0 stop öncelikli\n#Y1 start öncelikli\n; Dene: X0 iki lambayı yakar, X1 söndürür; sonra ikisine birlikte bas\n; (birlikte basmak için X1'i sağ tıkla kilitle, sonra X0'a bas)\n; Aynı taramada hem SET hem RST çalışırsa programda SONRA yazılan kazanır\nLD X0\nSET Y0\n; Y0'da RST sonra yazıldı: ikisine birden basılınca Y0 SÖNER (stop öncelikli)\nLD X1\nRST Y0\n; Y1'de sıra ters: önce RST, sonra SET\nLD X1\nRST Y1\n; SET sonra yazıldı: ikisine birden basılınca Y1 YANAR (start öncelikli)\nLD X0\nSET Y1\nEND",
+  },
+  {
+    name: "Alarm hafızası (SET ile kalıcı)",
+    il: "#X2 kapı sensörü\n#X3 alarm reset\n#Y0 alarm lambası\n#Y1 kapı açık\n; Dene: X2'ye kısa bas; bırakınca da alarm yanık kalır, X3 söndürür\n; Kapı bir an açılsa bile SET alarmı hatırlar\nLD X2\nSET Y0\n; Reset butonu alarmı siler\nLD X3\nRST Y0\n; Karşılaştırma: OUT ile yapılan lamba sensör bırakılınca hemen söner (hafızası yok)\nLD X2\nOUT Y1\nEND",
+  },
+  {
+    name: "Çağrı butonları, ortak sıfırlama",
+    il: "#X0 oda 1 çağrı\n#X1 oda 2 çağrı\n#X2 oda 3 çağrı\n#X3 sıfırla\n#Y0 oda 1 lamba\n#Y1 oda 2 lamba\n#Y2 oda 3 lamba\n; Dene: X0, X1, X2'ye bas; lambalar yanık kalır, X3 hepsini söndürür\n; Oda 1 çağrısı: SET lambayı yakar ve tutar\nLD X0\nSET Y0\n; Oda 2 çağrısı\nLD X1\nSET Y1\n; Oda 3 çağrısı\nLD X2\nSET Y2\n; Tek butonla ortak sıfırlama: bir koşul, üç RST\nLD X3\nRST Y0\nRST Y1\nRST Y2\nEND",
+  },
+  {
+    name: "SET ile çalış, süre dolunca RST",
+    il: "#X0 start\n#X1 stop\n#Y0 motor\n; Dene: X0'a bir kez bas; motor 5 s çalışıp kendi durur, X1 erken durdurur\nLD X0\nSET Y0\n; Motor çalıştıkça T0 sayar (5 s)\nLD Y0\nTMR T0 K50\n; Süre dolunca ya da stop'a basılınca motor sıfırlanır\nLD T0\nOR X1\nRST Y0\nEND",
+  },
+  {
+    name: "OUT mühürleme ile SET/RST karşılaştırma",
+    il: "#X0 start\n#X1 stop\n#Y0 OUT ile\n#Y1 SET/RST ile\n; Dene: X0 ve X1'e bas; iki lamba aynı davranır: aynı iş, iki farklı yol\n; 1. yol: mühürleme. Y0 kendi kontağıyla kendini tutar, stop kapalı kontağı bırakır\nLD X0\nOR Y0\nANI X1\nOUT Y0\n; 2. yol: SET kurar ve tutar, RST siler. Mühürleme kontağına gerek yok\nLD X0\nSET Y1\nLD X1\nRST Y1\nEND",
+  },
 ];

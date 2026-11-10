@@ -1,0 +1,16 @@
+#X0 start
+#X1 stop
+#Y0 OUT ile
+#Y1 SET/RST ile
+; Dene: X0 ve X1'e bas; iki lamba aynı davranır: aynı iş, iki farklı yol
+; 1. yol: mühürleme. Y0 kendi kontağıyla kendini tutar, stop kapalı kontağı bırakır
+LD X0
+OR Y0
+ANI X1
+OUT Y0
+; 2. yol: SET kurar ve tutar, RST siler. Mühürleme kontağına gerek yok
+LD X0
+SET Y1
+LD X1
+RST Y1
+END

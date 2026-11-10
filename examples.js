@@ -334,6 +334,108 @@ OR X1
 RST C0
 END`,
     },
+    {
+      name: 'SET/RST önceliği (son yazan kazanır)',
+      il: `#X0 start
+#X1 stop
+#Y0 stop öncelikli
+#Y1 start öncelikli
+; Dene: X0 iki lambayı yakar, X1 söndürür; sonra ikisine birlikte bas
+; (birlikte basmak için X1'i sağ tıkla kilitle, sonra X0'a bas)
+; Aynı taramada hem SET hem RST çalışırsa programda SONRA yazılan kazanır
+LD X0
+SET Y0
+; Y0'da RST sonra yazıldı: ikisine birden basılınca Y0 SÖNER (stop öncelikli)
+LD X1
+RST Y0
+; Y1'de sıra ters: önce RST, sonra SET
+LD X1
+RST Y1
+; SET sonra yazıldı: ikisine birden basılınca Y1 YANAR (start öncelikli)
+LD X0
+SET Y1
+END`,
+    },
+    {
+      name: 'Alarm hafızası (SET ile kalıcı)',
+      il: `#X2 kapı sensörü
+#X3 alarm reset
+#Y0 alarm lambası
+#Y1 kapı açık
+; Dene: X2'ye kısa bas; bırakınca da alarm yanık kalır, X3 söndürür
+; Kapı bir an açılsa bile SET alarmı hatırlar
+LD X2
+SET Y0
+; Reset butonu alarmı siler
+LD X3
+RST Y0
+; Karşılaştırma: OUT ile yapılan lamba sensör bırakılınca hemen söner (hafızası yok)
+LD X2
+OUT Y1
+END`,
+    },
+    {
+      name: 'Çağrı butonları, ortak sıfırlama',
+      il: `#X0 oda 1 çağrı
+#X1 oda 2 çağrı
+#X2 oda 3 çağrı
+#X3 sıfırla
+#Y0 oda 1 lamba
+#Y1 oda 2 lamba
+#Y2 oda 3 lamba
+; Dene: X0, X1, X2'ye bas; lambalar yanık kalır, X3 hepsini söndürür
+; Oda 1 çağrısı: SET lambayı yakar ve tutar
+LD X0
+SET Y0
+; Oda 2 çağrısı
+LD X1
+SET Y1
+; Oda 3 çağrısı
+LD X2
+SET Y2
+; Tek butonla ortak sıfırlama: bir koşul, üç RST
+LD X3
+RST Y0
+RST Y1
+RST Y2
+END`,
+    },
+    {
+      name: 'SET ile çalış, süre dolunca RST',
+      il: `#X0 start
+#X1 stop
+#Y0 motor
+; Dene: X0'a bir kez bas; motor 5 s çalışıp kendi durur, X1 erken durdurur
+LD X0
+SET Y0
+; Motor çalıştıkça T0 sayar (5 s)
+LD Y0
+TMR T0 K50
+; Süre dolunca ya da stop'a basılınca motor sıfırlanır
+LD T0
+OR X1
+RST Y0
+END`,
+    },
+    {
+      name: 'OUT mühürleme ile SET/RST karşılaştırma',
+      il: `#X0 start
+#X1 stop
+#Y0 OUT ile
+#Y1 SET/RST ile
+; Dene: X0 ve X1'e bas; iki lamba aynı davranır: aynı iş, iki farklı yol
+; 1. yol: mühürleme. Y0 kendi kontağıyla kendini tutar, stop kapalı kontağı bırakır
+LD X0
+OR Y0
+ANI X1
+OUT Y0
+; 2. yol: SET kurar ve tutar, RST siler. Mühürleme kontağına gerek yok
+LD X0
+SET Y1
+LD X1
+RST Y1
+END`,
+    },
   ];
   if (typeof module !== 'undefined' && module.exports) module.exports = EXAMPLES;
   else G.PLC_EXAMPLES = EXAMPLES;
