@@ -40,7 +40,7 @@ export const EXAMPLES: readonly Example[] = [
   },
   {
     name: "Üç motor sıralı kalkış",
-    il: "#X0 start\n#X1 stop\n#Y0 motor 1\n#Y1 motor 2\n#Y2 motor 3\n; Dene: X0'a bas; motorlar 4 s arayla tek tek kalkar, X1 hepsini durdurur\n; Start ile M0 mühürlenir (kendi kontağıyla tutar), stop bırakır\nLD X0\nOR M0\nANI X1\nOUT M0\n; Motor 1 hemen kalkar, T0 4 s saymaya başlar\nLD M0\nOUT Y0\nTMR T0 K40\n; T0 doldu: motor 2 kalkar, T1 4 s sayar\nLD T0\nOUT Y1\nTMR T1 K40\n; T1 doldu: motor 3 kalkar. Stop'ta M0 düşer, zincir sondan geriye çözülür\nLD T1\nOUT Y2\nEND",
+    il: "#X0 start\n#X1 stop\n#Y0 motor 1\n#Y1 motor 2\n#Y2 motor 3\n; Dene: X0'a bas; motorlar 4 s arayla tek tek kalkar, X1 hepsini durdurur\n; Start ile M0 mühürlenir (kendi kontağıyla tutar), stop bırakır\nLD X0\nOR M0\nANI X1\nOUT M0\n; Motor 1 hemen kalkar, T0 4 s saymaya başlar\nLD M0\nOUT Y0\nTMR T0 K40\n; T0 doldu: motor 2 kalkar, T1 4 s sayar\nLD T0\nOUT Y1\nTMR T1 K40\n; T1 doldu: motor 3 kalkar. Stop'ta M0 düşer, üç motor aynı anda durur\nLD T1\nOUT Y2\nEND",
   },
   {
     name: "Konveyör hattı: sıralı kalkış, ters duruş",

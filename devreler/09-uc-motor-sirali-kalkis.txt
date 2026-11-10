@@ -17,7 +17,7 @@ TMR T0 K40
 LD T0
 OUT Y1
 TMR T1 K40
-; T1 doldu: motor 3 kalkar. Stop'ta M0 düşer, zincir sondan geriye çözülür
+; T1 doldu: motor 3 kalkar. Stop'ta M0 düşer, üç motor aynı anda durur
 LD T1
 OUT Y2
 END
