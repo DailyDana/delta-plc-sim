@@ -38,8 +38,15 @@ Model: `--model ES2|SS2|EH3|v1` (varsayılan ES2). v1 profili yalnızca eski dav
 - X/Y sekizlik (X0–X7, X10…). `#X0 etiket` cihaz etiketi, `;` açıklama (komuttan önceki açıklama satırı = satır açıklaması).
 - Satır, bir çıkış komutundan sonra gelen ilk LD/LDI/LDP/LDF ile başlar.
 - Komutlar: LD/LDI/LDP/LDF, AND/ANI/ANDP/ANDF, OR/ORI/ORP/ORF, ANB, ORB, MPS/MRD/MPP (en çok 8 iç içe),
-  OUT, SET, RST, TMR Tn Kn, CNT Cn Kn, PLS, PLF, END, NOP. (MOV/CMP/MC/STL vb. Aşama 3'te.)
+  OUT, SET, RST, TMR Tn Kn|Dn, CNT Cn Kn|Dn, PLS, PLF, INV, END, NOP.
+- Uygulama komutları (Aşama 3a; P soneki darbe, D öneki 32 bit): MOV, CMP, ZCP, ADD, SUB, MUL, DIV, INC, DEC,
+  WAND/WOR/WXOR (32 bit: DAND/DOR/DXOR), ZRST, ALT. Karşılaştırma kontakları: LD= LD> LD< LD<> LD<= LD>= ve AND…/OR…/D…
+  Kelime işlenenleri: K10, H1F, D0, T0/C0 (değer), K1Y0 (Y0–Y3 bit grubu). Davranış ve sayfa numaraları: `docs/kilavuz-notlari.md`.
+  Yeni komut eklerken: `instructions.ts` tablosu → `il.ts` işlenen denetimi → `vm.ts` `api()` → `tests/api.test.ts` (kılavuz örneğiyle).
+- MC/MCR, CJ/P, STL/RET, SFTL/SFTR, DCNT henüz yok (Aşama 3b).
 - Ladder'a çevrilemeyen ama çalışan kalıp: çıkıştan sonra OR (`L_OR_AFTER_OUTPUT`).
+- Örnekler (`src/core/examples.ts`): ilk `V1_COUNT` (19) örnek v1 `examples.js` ile birebir aynı (eşdeğerlik testi); sonrakiler v2'ye özel.
+  Yeni örnek: `devreler/NN-ad.txt` yaz → `kontrol` (ES2 ve v1) → `sim` ile yorumlardaki davranışı doğrula → listeye ekle (sırayı bozma, `#ornek=N` bağlantıları sıraya bağlı).
 
 ## Tarayıcıda sürmek: `window.plc` (v2) / `PLC.app` (v1)
 

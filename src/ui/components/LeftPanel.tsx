@@ -6,7 +6,7 @@ import { useStore } from '../state/store';
 import { apply, insertPart, newRung, type DragPayload } from '../state/edit';
 import { parseBackup } from '../state/persist';
 import { beginPointer, clickSuppressed, focusOperandSoon, registerTrash, useDrag, useEraser } from '../ladder/drag';
-import { COIL_PARTS, CONTACT_PARTS, PartIcon } from './symbols';
+import { API_PARTS, COIL_PARTS, CONTACT_PARTS, DATA_CONTACT_PARTS, PartIcon } from './symbols';
 import { askConfirm, askText, showText } from './dialogs';
 import { downloadText, fileSafe, openOrSwitch } from './fileops';
 
@@ -51,6 +51,17 @@ function Parts() {
         <div className="parts">
           {COIL_PARTS.map((p) => (
             <Part key={p.k} payload={{ src: 'palette', g: 'o', k: p.k }} name={p.name} title={`${p.k}: ${p.desc}`} />
+          ))}
+        </div>
+      </div>
+      <div className="sect">
+        <h3>Veri ve karşılaştırma</h3>
+        <div className="parts">
+          {DATA_CONTACT_PARTS.map((p) => (
+            <Part key={p.k} payload={{ src: 'palette', g: 'c', k: p.k }} name={p.name} title={`${p.name} (${p.il})`} />
+          ))}
+          {API_PARTS.map((p) => (
+            <Part key={p.k} payload={{ src: 'palette', g: 'o', k: p.k }} name={p.name} title={p.desc} />
           ))}
         </div>
       </div>

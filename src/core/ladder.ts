@@ -3,7 +3,7 @@
 // sonra OR) ağaçla gösterilemez: o durumda program çalışır ama ladder'a çevrilemediği bildirilir.
 
 import { diag, type Diagnostic } from './diagnostics';
-import { CONTACT_MNEMONICS, isCoilType, type CoilType, type ContactKind } from './instructions';
+import { CONTACT_MNEMONICS, cmpMnemonic, isCoilType, type CmpOp, type ContactKind } from './instructions';
 import { analyze, parseIl, type IlProgram } from './il';
 import { getProfile, type Profile } from './profiles';
 
@@ -11,7 +11,12 @@ export interface Contact {
   t: 'c';
   id: string;
   kind: ContactKind;
+  /** Cihaz (CMP'de ilk işlenen S1; INV'de boş) */
   op: string;
+  /** Karşılaştırma kontağı: işleç, ikinci işlenen, 32 bit */
+  cmp?: CmpOp;
+  op2?: string;
+  d32?: boolean;
 }
 export interface Parallel {
   t: 'p';
@@ -22,11 +27,18 @@ export type Block = Contact | Parallel;
 export type Series = Block[];
 
 export interface Coil {
-  type: CoilType;
+  /** OUT, SET, RST, TMR, CNT, PLS, PLF ya da uygulama komutu (MOV, ADDP, DMOV…) */
+  type: string;
+  /** İlk işlenen */
   op: string;
-  /** TMR/CNT ayar değeri (sayı metni, ör. "50") */
+  /** TMR/CNT ayar değeri: sayı metni ("50") ya da kaydedici ("D0") */
   k: string;
+  /** Uygulama komutunun ilk işlenenden sonraki işlenenleri */
+  args?: string[];
 }
+
+/** Bobin yalnızca temel bobin mi (OUT/SET/…); değilse uygulama komutu kutusu */
+export const isBasicCoil = (c: Coil): boolean => isCoilType(c.type);
 
 /** Çıkış dalı: ya bir bobinle biter ya da alt dallara ayrılır (iç içe MPS) */
 export interface OutBranch {
@@ -50,13 +62,13 @@ export interface Ladder {
 
 let uid = 1;
 const nid = (): string => 'n' + uid++;
-export const contact = (kind: ContactKind, op: string): Contact => ({ t: 'c', id: nid(), kind, op });
+export const contact = (kind: ContactKind, op: string, extra: Partial<Pick<Contact, 'cmp' | 'op2' | 'd32'>> = {}): Contact => ({ t: 'c', id: nid(), kind, op, ...extra });
 export const parallel = (branches: Series[]): Parallel => ({ t: 'p', id: nid(), branches });
 export const coilBranch = (pre: Series, c: Coil): OutBranch => ({ id: nid(), pre, coil: c });
 export const rung = (input: Series, outputs: OutBranch[], comment = ''): Rung => ({ id: nid(), input, outputs, comment });
 
 export function cloneSeries(s: Series): Series {
-  return s.map((b) => (b.t === 'c' ? contact(b.kind, b.op) : parallel(b.branches.map(cloneSeries))));
+  return s.map((b) => (b.t === 'c' ? { ...b, id: nid() } : parallel(b.branches.map(cloneSeries))));
 }
 
 /** Kimlikleri koruyarak derin kopya (düzenleyici değişmez durum için kullanır) */
@@ -64,11 +76,22 @@ export function cloneLadder(l: Ladder): Ladder {
   const s = (x: Series): Series => x.map((b) => (b.t === 'c' ? { ...b } : { t: 'p', id: b.id, branches: b.branches.map(s) }));
   const o = (b: OutBranch): OutBranch => {
     const n: OutBranch = { id: b.id, pre: s(b.pre) };
-    if (b.coil) n.coil = { ...b.coil };
+    if (b.coil) n.coil = { ...b.coil, ...(b.coil.args ? { args: [...b.coil.args] } : {}) };
     if (b.children) n.children = b.children.map(o);
     return n;
   };
   return { labels: { ...l.labels }, rungs: l.rungs.map((r) => ({ id: r.id, comment: r.comment, input: s(r.input), outputs: r.outputs.map(o) })) };
+}
+
+/** Öğenin komut adı ve işlenenleri (anlık hata denetimi için: checkInstrOperands(mn, ops)) */
+export function contactOperands(c: Contact): { mn: string; ops: string[] } {
+  if (c.kind === 'CMP') return { mn: cmpMnemonic(c.cmp ?? '=', 0, !!c.d32), ops: [c.op, c.op2 ?? ''] };
+  if (c.kind === 'INV') return { mn: 'INV', ops: [] };
+  return { mn: CONTACT_MNEMONICS[c.kind][0], ops: [c.op] };
+}
+export function coilOperands(c: Coil): { mn: string; ops: string[] } {
+  if (c.type === 'TMR' || c.type === 'CNT') return { mn: c.type, ops: [c.op, c.k] };
+  return { mn: c.type, ops: [c.op, ...(c.args ?? [])] };
 }
 
 // ------------------------------------------------------------------ ağaç → IL
@@ -83,13 +106,19 @@ class Out {
 }
 
 function contactLine(c: Contact, pos: 0 | 1 | 2): string {
+  if (c.kind === 'CMP') return `${cmpMnemonic(c.cmp ?? '=', pos, !!c.d32)} ${c.op} ${c.op2 ?? '?'}`;
+  if (c.kind === 'INV') return 'INV';
   return CONTACT_MNEMONICS[c.kind][pos] + ' ' + c.op;
 }
 
 function genSeries(series: Series, out: Out, mode: 'load' | 'and'): void {
   series.forEach((b, j) => {
     const first = j === 0 && mode === 'load';
-    if (b.t === 'c') out.push(contactLine(b, first ? 0 : 1), b.id);
+    if (b.t === 'c') {
+      // INV bir sonuç ister: serinin başındaysa önce her zaman 1 olan M1000 yüklenir
+      if (b.kind === 'INV' && first) out.push('LD M1000');
+      out.push(contactLine(b, first && b.kind !== 'INV' ? 0 : 1), b.id);
+    }
     else {
       genPar(b, out);
       if (!first) out.push('ANB');
@@ -100,7 +129,7 @@ function genSeries(series: Series, out: Out, mode: 'load' | 'and'): void {
 function genPar(p: Parallel, out: Out): void {
   p.branches.forEach((br, k) => {
     const only = br[0];
-    if (k > 0 && br.length === 1 && only && only.t === 'c') out.push(contactLine(only, 2), only.id);
+    if (k > 0 && br.length === 1 && only && only.t === 'c' && only.kind !== 'INV') out.push(contactLine(only, 2), only.id);
     else {
       genSeries(br, out, 'load');
       if (k > 0) out.push('ORB');
@@ -110,10 +139,11 @@ function genPar(p: Parallel, out: Out): void {
 
 function coilLine(c: Coil): string {
   if (c.type === 'TMR' || c.type === 'CNT') {
+    if (/^D\d+$/i.test(c.k.trim())) return `${c.type} ${c.op} ${c.k.trim().toUpperCase()}`;
     const k = parseInt(c.k, 10);
     return `${c.type} ${c.op} K${Number.isNaN(k) ? '?' : k}`;
   }
-  return `${c.type} ${c.op}`;
+  return [c.type, c.op, ...(c.args ?? [])].join(' ');
 }
 
 function genBranchBody(b: OutBranch, out: Out): void {
@@ -172,7 +202,47 @@ function orCombine(a: Series, b: Series): Series {
   return [parallel([a, ...bBranches])];
 }
 
+const track = <T extends { id: string }>(x: T, i: number): T => {
+  srcOf?.set(x.id, i);
+  return x;
+};
+
+/** IL komutundan kontak (karşılaştırma kontağı ve INV dahil) */
+function contactOf(it: IlProgram['instrs'][number]): Contact {
+  const kind = it.def.contact ?? 'NO';
+  if (kind === 'CMP') return contact('CMP', it.ops[0]?.raw ?? '?', { cmp: it.def.cmp ?? '=', op2: it.ops[1]?.raw ?? '?', d32: !!it.def.d32 });
+  if (kind === 'INV') return contact('INV', '');
+  return contact(kind, it.ops[0]?.raw ?? '?');
+}
+
+/** IL çıkış komutundan bobin / fonksiyon kutusu */
+function coilOf(it: IlProgram['instrs'][number]): Coil {
+  const op = it.ops[0]?.raw ?? '?';
+  if (isCoilType(it.mn)) {
+    const k = it.ops[1];
+    const kText = !k ? '' : k.addr ? k.addr.text : k.k !== undefined ? String(k.k) : k.raw;
+    return { type: it.mn, op, k: kText };
+  }
+  return { type: it.mn, op, k: '', args: it.ops.slice(1).map((o) => o.raw || '?') };
+}
+
 /** Boş ön kontaklı ara düğümleri üst listeye aç; tek çocuklu düğümleri birleştir */
+/** ilToLadder sırasında: ladder öğe id'si → onu üreten komutun sırası */
+let srcOf: Map<string, number> | null = null;
+
+/** Kopyalarken kaynak eşlemesini de taşı (çıkış dallarının ön serileri kopyalanır) */
+function cloneTracked(s: Series): Series {
+  return s.map((b) => {
+    if (b.t === 'c') {
+      const n = { ...b, id: nid() };
+      const src = srcOf?.get(b.id);
+      if (src !== undefined) srcOf!.set(n.id, src);
+      return n;
+    }
+    return parallel(b.branches.map(cloneTracked));
+  });
+}
+
 function normalize(list: OutBranch[]): OutBranch[] {
   const out: OutBranch[] = [];
   for (const b of list) {
@@ -185,6 +255,8 @@ function normalize(list: OutBranch[]): OutBranch[] {
       if (b.children.length === 1) {
         const c = b.children[0]!;
         const merged: OutBranch = { id: b.id, pre: [...b.pre, ...c.pre] };
+        const cs = srcOf?.get(c.id);
+        if (cs !== undefined) srcOf!.set(b.id, cs); // birleşen dal, alttaki bobinin komutunu taşır
         if (c.coil) merged.coil = c.coil;
         if (c.children) merged.children = c.children;
         out.push(merged);
@@ -197,8 +269,10 @@ function normalize(list: OutBranch[]): OutBranch[] {
 }
 
 /** IL komutlarını ladder ağacına çevirir. Gösterilemeyen kalıplarda null + tanılama döner. */
-export function ilToLadder(program: IlProgram): { ladder: Ladder | null; diagnostics: Diagnostic[] } {
+export function ilToLadder(program: IlProgram): { ladder: Ladder | null; diagnostics: Diagnostic[]; instrOf: Map<string, number> } {
   const diagnostics: Diagnostic[] = [];
+  const map = new Map<string, number>();
+  srcOf = map;
   const { rungs: spans } = analyze(program);
   const rungs: Rung[] = [];
 
@@ -232,12 +306,12 @@ export function ilToLadder(program: IlProgram): { ladder: Ladder | null; diagnos
       const op = it.ops[0];
       switch (it.def.cls) {
         case 'load':
-          stack.push([contact(it.def.contact!, op?.raw ?? '?')]);
+          stack.push([track(contactOf(it), i)]);
           break;
         case 'and': {
           const top = stack[stack.length - 1];
           if (!top) fail(it.line, `${it.mn}: önce LD gerekir`);
-          else top.push(contact(it.def.contact!, op?.raw ?? '?'));
+          else top.push(track(contactOf(it), i));
           break;
         }
         case 'or': {
@@ -247,7 +321,13 @@ export function ilToLadder(program: IlProgram): { ladder: Ladder | null; diagnos
           }
           const top = stack[stack.length - 1];
           if (!top) fail(it.line, `${it.mn}: önce LD gerekir`);
-          else stack[stack.length - 1] = orCombine(top, [contact(it.def.contact!, op?.raw ?? '?')]);
+          else stack[stack.length - 1] = orCombine(top, [track(contactOf(it), i)]);
+          break;
+        }
+        case 'inv': {
+          const top = stack[stack.length - 1];
+          if (!top) fail(it.line, 'INV: önce LD gerekir');
+          else top.push(track(contactOf(it), i));
           break;
         }
         case 'block': {
@@ -290,9 +370,9 @@ export function ilToLadder(program: IlProgram): { ladder: Ladder | null; diagnos
             fail(it.line, `${it.mn} öncesi açık blok var`);
             break;
           }
-          if (!isCoilType(it.mn)) break;
-          const k = it.ops[1];
-          active.push(coilBranch(cloneSeries(stack[0]!), { type: it.mn, op: op?.raw ?? '?', k: k && k.k !== undefined ? String(k.k) : '' }));
+          const br = coilBranch(cloneTracked(stack[0]!), coilOf(it));
+          map.set(br.id, i);
+          active.push(br);
           break;
         }
         default:
@@ -306,7 +386,8 @@ export function ilToLadder(program: IlProgram): { ladder: Ladder | null; diagnos
   }
 
   const failedAny = diagnostics.some((d) => d.code.startsWith('L_'));
-  return { ladder: failedAny ? null : { rungs, labels: { ...program.labels } }, diagnostics };
+  srcOf = null;
+  return { ladder: failedAny ? null : { rungs, labels: { ...program.labels } }, diagnostics, instrOf: map };
 }
 
 /**

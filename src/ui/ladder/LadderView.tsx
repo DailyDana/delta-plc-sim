@@ -3,8 +3,7 @@
 
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Minus, Plus, Scan } from 'lucide-react';
-import { checkInstrOperands, getProfile, parseAddress, timerRange, type Coil, type Ladder } from '../../core';
-import { CONTACT_MNEMONICS } from '../../core/instructions';
+import { checkInstrOperands, coilOperands, contactOperands, getProfile, parseAddress, timerRange, type Coil, type Ladder } from '../../core';
 import { useStore } from '../state/store';
 import { apply, locate, newRung, pasteClip, remove, takeClip, type Clip } from '../state/edit';
 import { ladderToIl } from '../../core';
@@ -22,11 +21,18 @@ const trunc = (s: string, n: number) => (s.length > n ? s.slice(0, n - 1) + '…
 
 function coilText(c: Coil): string {
   if (c.type === 'TMR' || c.type === 'CNT') {
+    if (/^D\d+$/i.test(c.k.trim())) return `${c.type} ${c.op || '?'} ${c.k.trim().toUpperCase()}`;
     const k = parseInt(c.k, 10);
     return `${c.type} ${c.op || '?'} K${Number.isNaN(k) ? '?' : k}`;
   }
-  return `${c.type} ${c.op || '?'}`;
+  return [c.type, c.op || '?', ...(c.args ?? [])].join(' ');
 }
+
+/** Fonksiyon kutusunun altında canlı gösterilecek kaydediciler (D, T, C) */
+const liveRegs = (c: Coil): string[] =>
+  [c.op, ...(c.args ?? [])].map((x) => x.toUpperCase()).filter((x, i, a) => /^[DTC]\d+$/.test(x) && a.indexOf(x) === i);
+
+const CMP_SHOW: Record<string, string> = { '=': '=', '>': '>', '<': '<', '<>': '≠', '<=': '≤', '>=': '≥' };
 
 interface SvgProps {
   sc: Scene;
@@ -63,8 +69,48 @@ const SceneSvg = memo(function SceneSvg({ sc, ladder, sel, model }: SvgProps) {
       {sc.contacts.map((c) => {
         const m = c.x + CW / 2;
         const cy = c.cy;
-        const bad = checkInstrOperands(CONTACT_MNEMONICS[c.kind][0], [c.op], profile)[0];
-        const l = lbl(c.op) || (/^M10(0\d|1[0-4])$/.test(c.op.toUpperCase()) ? 'özel röle' : '');
+        const co = contactOperands(c.c);
+        const bad = checkInstrOperands(co.mn, co.ops, profile)[0];
+        const l = c.kind === 'CMP' || c.kind === 'INV' ? '' : lbl(c.op) || (/^M10(0\d|1[0-4])$/.test(c.op.toUpperCase()) ? 'özel röle' : '');
+        const hit = (
+          <rect className={'hit' + (sel === c.id ? ' sel' : '')} data-sel={c.id} data-g="c" x={c.x + 4} y={cy - RH / 2 + 2} width={CW - 8} height={RH - 4}>
+            <title>{`${co.mn} ${co.ops.join(' ')}${bad ? ' — ' + bad.message : ''}\nTıkla: düzenle · sürükle: taşı (Ctrl: kopyala)`}</title>
+          </rect>
+        );
+        if (c.kind === 'CMP') {
+          // Karşılaştırma kontağı: üstte S1, kutuda işleç, altta S2
+          return (
+            <g key={c.id}>
+              <g className="ct cmp" data-cl={c.id}>
+                <rect className="face cbox" x={m - 22} y={cy - 12} width={44} height={24} rx={3} />
+              </g>
+              <text className="cmpop" x={m} y={cy + 5} textAnchor="middle">
+                {(c.c.d32 ? 'D' : '') + (CMP_SHOW[c.c.cmp ?? '='] ?? c.c.cmp)}
+              </text>
+              <text className={'op' + (bad ? ' bad' : '')} x={m} y={cy - 18} textAnchor="middle">
+                {c.op || '?'}
+              </text>
+              <text className={'op' + (bad ? ' bad' : '')} x={m} y={cy + 27} textAnchor="middle">
+                {c.c.op2 || '?'}
+              </text>
+              {hit}
+            </g>
+          );
+        }
+        if (c.kind === 'INV') {
+          return (
+            <g key={c.id}>
+              <line className="w" data-pw={c.id + ':in'} x1={m - 10} y1={cy} x2={m + 10} y2={cy} />
+              <g className="ct inv" data-cl={c.id}>
+                <line className="slash" x1={m - 8} y1={cy + 12} x2={m + 8} y2={cy - 12} />
+              </g>
+              <text className="op" x={m} y={cy - 21} textAnchor="middle">
+                INV
+              </text>
+              {hit}
+            </g>
+          );
+        }
         return (
           <g key={c.id}>
             <g className="ct" data-cl={c.id}>
@@ -83,9 +129,7 @@ const SceneSvg = memo(function SceneSvg({ sc, ladder, sel, model }: SvgProps) {
                 {trunc(l, 14)}
               </text>
             )}
-            <rect className={'hit' + (sel === c.id ? ' sel' : '')} data-sel={c.id} data-g="c" x={c.x + 4} y={cy - RH / 2 + 2} width={CW - 8} height={RH - 4}>
-              <title>{`${c.op}${bad ? ' — ' + bad.message : ''}\nTıkla: düzenle · sürükle: taşı (Ctrl: kopyala)`}</title>
-            </rect>
+            {hit}
           </g>
         );
       })}
@@ -93,8 +137,9 @@ const SceneSvg = memo(function SceneSvg({ sc, ladder, sel, model }: SvgProps) {
         const c = o.coil;
         const cy = o.cy;
         const x = o.x;
-        const ops = c.type === 'TMR' || c.type === 'CNT' ? [c.op, c.k] : [c.op];
-        const bad = checkInstrOperands(c.type, ops, profile)[0];
+        const co = coilOperands(c);
+        const bad = checkInstrOperands(co.mn, co.ops, profile)[0];
+        const regs = c.args ? liveRegs(c) : [];
         const l = lbl(c.op);
         const isOut = c.type === 'OUT';
         const m = x + COILW / 2;
@@ -128,6 +173,7 @@ const SceneSvg = memo(function SceneSvg({ sc, ladder, sel, model }: SvgProps) {
                   {coilText(c)}
                 </text>
                 <line className="w off" x1={x + COILW - 6} y1={cy} x2={sc.rightX} y2={cy} />
+                {regs.length > 0 && <text className="tv" data-wv={regs.join(' ')} x={m} y={cy + 29} textAnchor="middle" />}
                 {tc && (
                   <>
                     <rect className="tvbar" x={x + 14} y={cy + 17} width={COILW - 28} height={3} rx={1.5} />
@@ -220,7 +266,7 @@ export function LadderView() {
   }, []);
 
   // ---------------------------------------------------------------- canlı akım
-  const els = useRef<{ pw: SVGElement[]; cl: SVGElement[]; q: SVGElement[]; tv: SVGTextElement[]; tvbar: SVGRectElement[] }>({ pw: [], cl: [], q: [], tv: [], tvbar: [] });
+  const els = useRef<{ pw: SVGElement[]; cl: SVGElement[]; q: SVGElement[]; tv: SVGTextElement[]; tvbar: SVGRectElement[]; wv: SVGTextElement[] }>({ pw: [], cl: [], q: [], tv: [], tvbar: [], wv: [] });
   useEffect(() => {
     const s = svg.current;
     if (!s) return;
@@ -229,6 +275,7 @@ export function LadderView() {
       cl: [...s.querySelectorAll<SVGElement>('[data-cl]')],
       q: [...s.querySelectorAll<SVGElement>('[data-q]')],
       tv: [...s.querySelectorAll<SVGTextElement>('[data-tv]')],
+      wv: [...s.querySelectorAll<SVGTextElement>('[data-wv]')],
       tvbar: [...s.querySelectorAll<SVGRectElement>('[data-tvbar]')],
     };
   }, [sc, sel]);
@@ -260,6 +307,20 @@ export function LadderView() {
       for (const el of e.pw) el.classList.toggle('on', !!pm.get(el.dataset.pw!));
       for (const el of e.cl) el.classList.toggle('on', !!pm.get(el.dataset.cl + ':closed'));
       for (const el of e.q) el.classList.toggle('on', !!pm.get(el.dataset.q + ':q'));
+    }
+    // fonksiyon kutularındaki kaydedicilerin canlı değerleri: "D0 = 12 · D1 = 13"
+    for (const el of e.wv) {
+      if (!m) {
+        el.textContent = '';
+        continue;
+      }
+      el.textContent = el.dataset.wv!.split(' ').map((r) => {
+        try {
+          return `${r} = ${m.value(r)}`;
+        } catch {
+          return r;
+        }
+      }).join(' · ');
     }
     // zamanlayıcı/sayıcı değerleri (STOP'ta da: kalıcı değerler görünsün)
     const p = m?.profile;

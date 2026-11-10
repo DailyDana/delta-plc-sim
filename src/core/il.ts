@@ -1,7 +1,7 @@
 // IL (komut listesi) ayrıştırıcı, işlenen denetimi ve yapısal analiz.
 // Sanal makine doğrudan bu komut dizisini çalıştırır; ladder ağacı yalnızca düzenleyici içindir.
 
-import { parseAddress, parseConstant, type Address } from './devices';
+import { parseAddress, parseConstant, parseKn, type Address, type WordRef } from './devices';
 import { diag, type Diagnostic } from './diagnostics';
 import { INSTRUCTIONS, MAX_MPS_DEPTH, type InstrDef } from './instructions';
 import { counterRange, getProfile, type Profile } from './profiles';
@@ -10,6 +10,8 @@ export interface Operand {
   raw: string;
   addr?: Address;
   k?: number;
+  /** Kelime işlenen (uygulama komutları ve karşılaştırma kontakları) */
+  word?: WordRef;
   /** İşlenen geçersizse true: makine okurken 0, yazarken yok sayar */
   invalid?: boolean;
 }
@@ -95,7 +97,11 @@ export function parseIl(text: string, profile: Profile = getProfile()): ParseRes
     } else if (args.length > def.operands.length) {
       diagnostics.push(diag('E_OPERAND_EXTRA', `${mn}: fazla işlenen (${args.slice(def.operands.length).join(' ')})`, at));
     }
-    const ops: Operand[] = def.operands.map((spec, j) => checkOperand(mn, spec.kinds, args[j] ?? '', profile, diagnostics, at));
+    const ops: Operand[] = def.operands.map((spec, j) => checkOperand(mn, spec.kinds, args[j] ?? '', profile, diagnostics, at, def));
+    if (def.base === 'ZRST' && ops[0]?.addr && ops[1]?.addr && ops[0].addr.type !== ops[1].addr.type) {
+      diagnostics.push(diag('E_OPERAND_KIND', `${mn}: D1 ve D2 aynı türde olmalı (${ops[0].addr.text}, ${ops[1].addr.text})`, at));
+      ops[1].invalid = true;
+    }
     const instr: Instr = { mn, def, ops, line };
     if (pending.length) {
       instr.comment = pending.join('\n');
@@ -111,7 +117,7 @@ export function checkInstrOperands(mn: string, ops: readonly string[], profile: 
   const def = INSTRUCTIONS[mn];
   if (!def) return [diag('E_UNKNOWN_OP', `Bilinmeyen komut: ${mn}`)];
   const out: Diagnostic[] = [];
-  def.operands.forEach((spec, i) => checkOperand(mn, spec.kinds, (ops[i] ?? '').trim(), profile, out, { line: 0, instr: 0 }));
+  def.operands.forEach((spec, i) => checkOperand(mn, spec.kinds, (ops[i] ?? '').trim(), profile, out, { line: 0, instr: 0 }, def));
   return out;
 }
 
@@ -122,6 +128,7 @@ function checkOperand(
   profile: Profile,
   out: Diagnostic[],
   at: { line: number; instr: number },
+  idef?: InstrDef,
 ): Operand {
   const op: Operand = { raw: raw.toUpperCase() };
   const bad = (code: Parameters<typeof diag>[0], msg: string): Operand => {
@@ -130,6 +137,30 @@ function checkOperand(
     return op;
   };
   if (!raw) return bad('E_OPERAND_MISSING', `${mn}: işlenen eksik`);
+  if (kinds.includes('WS') || kinds.includes('WD')) return checkWord(mn, kinds.includes('WS'), raw, profile, op, bad, !!idef?.d32);
+  if (kinds.includes('KD')) {
+    // TMR/CNT ayar değeri: K0~K32767 ya da D0~D9999 (kılavuz s.3-281/282)
+    const k = parseConstant(raw) ?? (/^\d+$/.test(raw) ? parseInt(raw, 10) : null);
+    if (k !== null) {
+      op.k = k;
+      op.raw = 'K' + k;
+      if (!(k >= profile.minK && k <= 32767)) return bad('E_CONST_RANGE', `${mn} için K değeri ${profile.minK}–32767 olmalı (${raw})`);
+      return op;
+    }
+    const a = parseAddress(raw).addr;
+    if (!a || a.type !== 'D') return bad('E_OPERAND_KIND', `${mn}: ayar değeri K sabiti ya da D kaydedicisi olmalı (ör. K50 ya da D0)`);
+    if (a.index > Math.min(9999, profile.max.D)) return bad('E_ADDR_RANGE', `${a.text}: ayar değeri için D0–D9999 kullanılır`);
+    op.addr = a;
+    op.raw = a.text;
+    op.word = { k: 'dev', type: 'D', index: a.index };
+    return op;
+  }
+  if (kinds.includes('N')) {
+    const k = parseConstant(raw);
+    if (k === null) return bad('E_CONST_RANGE', `${mn}: sayı sabiti olmalı (ör. K4)`);
+    op.k = k;
+    return op;
+  }
   if (kinds.includes('K')) {
     const k = parseConstant(raw);
     if (k !== null) {
@@ -175,6 +206,61 @@ function checkOperand(
   return op;
 }
 
+/** Kelime işleneni denetle: sabit (yalnızca kaynakta), D, T/C değeri, KnX/KnY/KnM/KnS */
+function checkWord(
+  mn: string,
+  isSource: boolean,
+  raw: string,
+  profile: Profile,
+  op: Operand,
+  bad: (code: Parameters<typeof diag>[0], msg: string) => Operand,
+  d32: boolean,
+): Operand {
+  const c = parseConstant(raw) ?? (/^-?\d+$/.test(raw) ? parseInt(raw, 10) : null);
+  if (c !== null) {
+    if (!isSource) return bad('E_OPERAND_KIND', `${mn}: sabit (${raw}) hedef olamaz; D, T, C ya da KnY/KnM/KnS yaz`);
+    const isHex = /^H/i.test(raw);
+    if (d32) {
+      if (isHex ? c > 0xffffffff : c < -2147483648 || c > 2147483647) return bad('E_CONST_RANGE', `${raw}: 32 bit aralık dışı`);
+      op.word = { k: 'const', v: c | 0 };
+    } else {
+      if (isHex ? c > 0xffff : c < -32768 || c > 32767) return bad('E_CONST_RANGE', `${raw}: 16 bit aralık dışı (K-32768–K32767, H0–HFFFF)`);
+      op.word = { k: 'const', v: (c << 16) >> 16 };
+    }
+    op.k = op.word.v;
+    op.raw = isHex ? raw.toUpperCase() : 'K' + c;
+    return op;
+  }
+  const kn = parseKn(raw);
+  if (kn === 'octal') return bad('E_ADDR_OCTAL', `${raw.toUpperCase()}: X/Y adresleri sekizlik sayılır (X0–X7, X10…)`);
+  if (kn) {
+    const maxN = d32 ? 8 : 4;
+    if (kn.n < 1 || kn.n > maxN) return bad('E_OPERAND_KIND', `${kn.text}: Kn için K1–K${maxN} kullanılır (${d32 ? '32' : '16'} bit)`);
+    if (!isSource && kn.type === 'X') return bad('E_OPERAND_KIND', `${mn} ${kn.text}: X girişine yazılamaz`);
+    if (kn.index + kn.n * 4 - 1 > profile.max[kn.type]) return bad('E_ADDR_RANGE', `${kn.text}: ${kn.n * 4} bit aralık dışına taşıyor`);
+    op.word = { k: 'kn', n: kn.n, type: kn.type, index: kn.index };
+    op.raw = kn.text;
+    return op;
+  }
+  const { addr, error } = parseAddress(raw);
+  if (!addr) {
+    if (error === 'octal') return bad('E_ADDR_OCTAL', `${raw.toUpperCase()}: X/Y adresleri sekizlik sayılır`);
+    return bad('E_ADDR_FORMAT', `"${raw}" geçerli bir kelime işleneni değil (K10, H1F, D0, T0, C0, K1Y0)`);
+  }
+  op.raw = addr.text;
+  if (addr.type !== 'D' && addr.type !== 'T' && addr.type !== 'C') {
+    return bad('E_OPERAND_KIND', `${mn} ${addr.text}: tek bit kelime olamaz; bit grubu için K1${addr.text} gibi yaz (4 bit)`);
+  }
+  if (addr.index > profile.max[addr.type]) return bad('E_ADDR_RANGE', `${addr.text}: aralık dışı (${addr.type}0–${addr.type}${profile.max[addr.type]})`);
+  if (d32 && addr.type === 'D' && addr.index + 1 > profile.max.D) return bad('E_ADDR_RANGE', `${addr.text}: 32 bit için ${addr.text} ve D${addr.index + 1} gerekir`);
+  if (!d32 && addr.type === 'C' && counterRange(profile, addr.index)?.bits === 32) {
+    return bad('E_OPERAND_KIND', `${addr.text}: 32 bit sayıcıdır; 32 bit komut (D önekli) kullan`);
+  }
+  op.addr = addr;
+  op.word = { k: 'dev', type: addr.type, index: addr.index };
+  return op;
+}
+
 /**
  * Yapısal analiz: komutları satırlara böler ve blok/MPS yığınlarını denetler.
  * Satır, bir çıkış komutundan sonra gelen ilk yükleme (LD…) komutuyla başlar (v1 ile aynı kural).
@@ -216,6 +302,7 @@ export function analyze(program: IlProgram): { rungs: RungSpan[]; diagnostics: D
         lastWasOutput = false;
         break;
       case 'and':
+      case 'inv':
       case 'or':
         if (start < 0 || depth === 0) diagnostics.push(diag('E_NEED_LOAD', `${it.mn}: önce LD ile başlamalı`, at));
         lastWasOutput = false;

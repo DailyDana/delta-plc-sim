@@ -1,0 +1,17 @@
+#X0 sayma
+#X1 sıfırla
+#Y0 bit 0 (1)
+#Y1 bit 1 (2)
+#Y2 bit 2 (4)
+#Y3 bit 3 (8)
+; Dene: X0'a basarak say; Y0–Y3 lambaları sayıyı ikilik gösterir, X1 sıfırlar
+; C0, 0'dan 15'e kadar sayar
+LD X0
+CNT C0 K15
+; Sayıcının değeri K1Y0'a, yani Y0–Y3 dört lambasına yazılır (ör. 5 = 0101: Y0 ve Y2)
+LD M1000
+MOV C0 K1Y0
+; Sıfırlama
+LD X1
+RST C0
+END

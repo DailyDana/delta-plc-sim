@@ -2,7 +2,10 @@
 //   1 ├┬──┤ X0 ├──┬──┤/X1 ├────( Y0 )
 //     │└──┤ Y0 ├──┘
 
-import type { Ladder, OutBranch, Parallel, Series } from './ladder';
+import type { Contact, Ladder, OutBranch, Parallel, Series } from './ladder';
+
+/** Kontak hücresindeki metin: "X0", karşılaştırmada "D0>=K10", INV için "INV" */
+const cText = (b: Contact): string => (b.kind === 'CMP' ? `${b.d32 ? 'D' : ''}${b.op}${b.cmp}${b.op2}` : b.kind === 'INV' ? 'INV' : b.op);
 
 class Canvas {
   private rows: string[][] = [];
@@ -24,7 +27,7 @@ export function drawLadderText(l: Ladder): string {
   let L = 2;
   const scanOps = (s: Series): void =>
     s.forEach((b) => {
-      if (b.t === 'c') L = Math.max(L, b.op.length);
+      if (b.t === 'c') L = Math.max(L, cText(b).length);
       else b.branches.forEach(scanOps);
     });
   const scanOuts = (list: OutBranch[]): void =>
@@ -66,8 +69,12 @@ export function drawLadderText(l: Ladder): string {
     let cx = x;
     for (const b of s) {
       if (b.t === 'c') {
-        const sym = b.kind === 'NC' ? '/' : b.kind === 'P' ? '↑' : b.kind === 'F' ? '↓' : ' ';
-        cv.put(cx, y, `──┤${sym}${b.op.padEnd(L)} ├──`);
+        if (b.kind === 'INV') cv.put(cx, y, `──┤╱${'INV'.padEnd(L)} ├──`);
+        else if (b.kind === 'CMP') cv.put(cx, y, `──[${cText(b).padEnd(L)} ]──`);
+        else {
+          const sym = b.kind === 'NC' ? '/' : b.kind === 'P' ? '↑' : b.kind === 'F' ? '↓' : ' ';
+          cv.put(cx, y, `──┤${sym}${b.op.padEnd(L)} ├──`);
+        }
       } else drawPar(b, cx, y);
       cx += bw(b);
     }
@@ -90,7 +97,8 @@ export function drawLadderText(l: Ladder): string {
   const coilText = (b: OutBranch): string => {
     const c = b.coil!;
     if (c.type === 'OUT') return `( ${c.op} )`;
-    return c.type === 'TMR' || c.type === 'CNT' ? `[${c.type} ${c.op} K${c.k}]` : `[${c.type} ${c.op}]`;
+    if (c.type === 'TMR' || c.type === 'CNT') return `[${c.type} ${c.op} ${/^D/i.test(c.k) ? c.k.toUpperCase() : 'K' + c.k}]`;
+    return `[${[c.type, c.op, ...(c.args ?? [])].join(' ')}]`;
   };
 
   const drawOuts = (list: OutBranch[], x: number, y: number): void => {

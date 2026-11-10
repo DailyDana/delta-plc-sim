@@ -81,6 +81,7 @@ export function deriveDoc(il: string, model: string, keep?: Ladder | null): Doc 
   const an = analyze(parsed.program);
   const diagnostics = [...parsed.diagnostics, ...an.diagnostics];
   let ladder: Ladder | null = keep ?? null;
+  let fromIl: Map<string, number> | null = null;
   let ladderError: string | null = null;
   if (!ladder) {
     if (diagnostics.some((d) => STRUCTURAL.has(d.code))) ladderError = 'IL\'de yapı hatası var; ladder görünümü için önce Sorunlar\'daki hataları düzelt.';
@@ -88,12 +89,15 @@ export function deriveDoc(il: string, model: string, keep?: Ladder | null): Doc 
       const conv = ilToLadder(parsed.program);
       diagnostics.push(...conv.diagnostics);
       ladder = conv.ladder;
+      fromIl = conv.instrOf;
       if (!ladder) ladderError = conv.diagnostics[0]?.message ?? 'Bu IL ladder olarak gösterilemiyor.';
     }
   }
   diagnostics.sort((a, b) => (a.line ?? 0) - (b.line ?? 0));
-  const instrOf = new Map<string, number>();
-  if (ladder) {
+  // Eşleme: IL'den kurulan ağaçta dönüşüm sırasında kaydedilen kaynak; düzenleyici ağacında üretilen IL ile karşılaştırma
+  let instrOf = new Map<string, number>();
+  if (ladder && fromIl) instrOf = fromIl;
+  else if (ladder) {
     const refs = mapProgramToLadder(parsed.program, ladder, profile);
     refs?.forEach((id, i) => id && instrOf.set(id, i));
   }

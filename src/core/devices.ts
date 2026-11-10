@@ -42,3 +42,20 @@ export function parseConstant(raw: string): number | null {
   if (m && m[1] !== undefined) return parseInt(m[1], 16);
   return null;
 }
+
+/** Kelime (16/32 bit) işlenen: sabit, kaydedici (D, T/C değeri) ya da bit grubu (K1Y0 = Y0–Y3) */
+export type WordRef =
+  | { k: 'const'; v: number }
+  | { k: 'dev'; type: 'D' | 'T' | 'C'; index: number }
+  | { k: 'kn'; n: number; type: 'X' | 'Y' | 'M' | 'S'; index: number };
+
+/** "K2Y10" → { n: 2, type: 'Y', index: 8 }; sekizlik hata → 'octal'; değilse null */
+export function parseKn(raw: string): { n: number; type: 'X' | 'Y' | 'M' | 'S'; index: number; text: string } | 'octal' | null {
+  const m = /^K(\d)([XYMS])(\d+)$/i.exec(raw.trim());
+  if (!m) return null;
+  const n = parseInt(m[1]!, 10);
+  const type = m[2]!.toUpperCase() as 'X' | 'Y' | 'M' | 'S';
+  const a = parseAddress(type + m[3]!);
+  if (!a.addr) return a.error === 'octal' ? 'octal' : null;
+  return { n, type, index: a.addr.index, text: 'K' + n + a.addr.text };
+}

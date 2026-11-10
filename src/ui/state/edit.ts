@@ -3,13 +3,38 @@
 
 import { contact, parallel, rung as mkRung, type Block, type Coil, type Contact, type Ladder, type OutBranch, type Parallel, type Rung, type Series } from '../../core/ladder';
 import { isOctalType, parseAddress } from '../../core/devices';
-import type { CoilType, ContactKind } from '../../core/instructions';
+import { API_BASES, apiMnemonic, INSTRUCTIONS, isCoilType, type CmpOp, type CoilType, type ContactKind } from '../../core/instructions';
 
 let seq = 1;
 const nid = (): string => 'u' + Date.now().toString(36) + (seq++).toString(36);
 
 export const newCoilBranch = (c: Coil): OutBranch => ({ id: nid(), pre: [], coil: c });
-export const newContact = (kind: ContactKind, op: string): Contact => ({ ...contact(kind, op), id: nid() });
+export const newContact = (kind: ContactKind, op: string, extra: Partial<Pick<Contact, 'cmp' | 'op2' | 'd32'>> = {}): Contact => ({ ...contact(kind, op, extra), id: nid() });
+
+/** Panodan gelen yeni kontak: karşılaştırma kontağı ve INV için uygun varsayılanlar */
+export const paletteContact = (kind: ContactKind): Contact =>
+  kind === 'CMP' ? newContact('CMP', 'D0', { cmp: '>=', op2: 'K10' }) : kind === 'INV' ? newContact('INV', '') : newContact(kind, 'X0');
+
+/** Uygulama komutlarının varsayılan işlenenleri (ilk kez eklenince) ve varsayılan biçimi */
+export const API_DEFAULTS: Record<string, { mn: string; ops: string[] }> = {
+  MOV: { mn: 'MOV', ops: ['K10', 'D0'] },
+  CMP: { mn: 'CMP', ops: ['D0', 'K10', 'M10'] },
+  ZCP: { mn: 'ZCP', ops: ['K10', 'K100', 'D0', 'M10'] },
+  ADD: { mn: 'ADD', ops: ['D0', 'K1', 'D1'] },
+  SUB: { mn: 'SUB', ops: ['D0', 'K1', 'D1'] },
+  MUL: { mn: 'MUL', ops: ['D0', 'K2', 'D10'] },
+  DIV: { mn: 'DIV', ops: ['D0', 'K2', 'D10'] },
+  INC: { mn: 'INCP', ops: ['D0'] },
+  DEC: { mn: 'DECP', ops: ['D0'] },
+  WAND: { mn: 'WAND', ops: ['D0', 'H00FF', 'D1'] },
+  WOR: { mn: 'WOR', ops: ['D0', 'H00FF', 'D1'] },
+  WXOR: { mn: 'WXOR', ops: ['D0', 'H00FF', 'D1'] },
+  ZRST: { mn: 'ZRSTP', ops: ['M0', 'M10'] },
+  ALT: { mn: 'ALTP', ops: ['Y0'] },
+};
+
+/** Komut adı uygulama komutu mu (MOV, ADDP, DMOV…) */
+export const isApiType = (t: string): boolean => !!INSTRUCTIONS[t]?.base;
 
 // ------------------------------------------------------------------ konum bulma
 export type SeriesRef = { owner: string; k: 'input' | 'pre' | number };
@@ -197,7 +222,9 @@ export function nextFree(l: Ladder, d: 'Y' | 'M' | 'T' | 'C'): string {
   return d + '0';
 }
 
-export function makeCoil(l: Ladder, type: CoilType): Coil {
+export function makeCoil(l: Ladder, type: string): Coil {
+  const api = API_DEFAULTS[type] ?? (INSTRUCTIONS[type]?.base ? { mn: type, ops: API_DEFAULTS[INSTRUCTIONS[type]!.base!]?.ops ?? [] } : null);
+  if (api) return { type: api.mn, op: api.ops[0] ?? '', k: '', args: api.ops.slice(1) };
   switch (type) {
     case 'TMR': return { type, op: nextFree(l, 'T'), k: '50' };
     case 'CNT': return { type, op: nextFree(l, 'C'), k: '5' };
@@ -294,7 +321,7 @@ export function apply(l: Ladder, id: string | null, act: Action): EditResult {
     }
     case 'duplicate': {
       if (loc.kind === 'contact') {
-        const n = newContact(loc.node.kind, loc.node.op);
+        const n = { ...loc.node, id: nid() };
         loc.series.splice(loc.index + 1, 0, n);
         sel = n.id;
       } else if (loc.kind === 'output') {
@@ -331,19 +358,35 @@ export function apply(l: Ladder, id: string | null, act: Action): EditResult {
 }
 
 export function copySeries(s: Series): Series {
-  return s.map((b): Block => (b.t === 'c' ? newContact(b.kind, b.op) : { t: 'p', id: nid(), branches: b.branches.map(copySeries) }));
+  return s.map((b): Block => (b.t === 'c' ? { ...b, id: nid() } : { t: 'p', id: nid(), branches: b.branches.map(copySeries) }));
 }
 export function copyBranch(o: OutBranch): OutBranch {
   const n: OutBranch = { id: nid(), pre: copySeries(o.pre) };
-  if (o.coil) n.coil = { ...o.coil };
+  if (o.coil) n.coil = { ...o.coil, ...(o.coil.args ? { args: [...o.coil.args] } : {}) };
   if (o.children) n.children = o.children.map(copyBranch);
   return n;
 }
 
 // ------------------------------------------------------------------ özellik değişiklikleri
-export function setContact(l: Ladder, id: string, patch: Partial<Pick<Contact, 'kind' | 'op'>>): void {
+export function setContact(l: Ladder, id: string, patch: Partial<Pick<Contact, 'kind' | 'op' | 'cmp' | 'op2' | 'd32'>>): void {
   const loc = locate(l, id);
-  if (loc?.kind === 'contact') Object.assign(loc.node, patch);
+  if (loc?.kind !== 'contact') return;
+  const c = loc.node;
+  const was = c.kind;
+  Object.assign(c, patch);
+  // Tür değişince işlenenleri uyarla: karşılaştırmaya geçişte kelime işlenenleri, geri dönüşte bit cihazı
+  if (patch.kind && patch.kind !== was) {
+    if (c.kind === 'CMP') {
+      c.cmp = c.cmp ?? '>=';
+      c.op = 'D0';
+      c.op2 = c.op2 ?? 'K10';
+    } else {
+      delete c.cmp;
+      delete c.op2;
+      delete c.d32;
+      c.op = c.kind === 'INV' ? '' : was === 'CMP' || was === 'INV' ? 'X0' : c.op;
+    }
+  }
 }
 
 export function setCoil(l: Ladder, id: string, patch: Partial<Coil>): void {
@@ -351,7 +394,28 @@ export function setCoil(l: Ladder, id: string, patch: Partial<Coil>): void {
   if (loc?.kind !== 'output' || !loc.o.coil) return;
   const c = loc.o.coil;
   const typeChanged = patch.type && patch.type !== c.type;
+  const wasApi = isApiType(c.type);
+  const oldBase = INSTRUCTIONS[c.type]?.base;
   Object.assign(c, patch);
+  if (typeChanged && isApiType(c.type)) {
+    // Aynı komutun biçimi değiştiyse (MOV → DMOVP) işlenenler kalır; farklı komutsa varsayılanlar gelir
+    if (!wasApi || INSTRUCTIONS[c.type]!.base !== oldBase) {
+      const d = makeCoil(l, INSTRUCTIONS[c.type]!.base!);
+      // Temel addan seçildiyse varsayılan biçim gelir (INC → INCP); belirli biçim seçildiyse o kalır
+      if (c.type === INSTRUCTIONS[c.type]!.base) c.type = d.type;
+      c.op = d.op;
+      c.args = d.args ?? [];
+    }
+    c.k = '';
+    return;
+  }
+  if (typeChanged && wasApi && isCoilType(c.type)) {
+    delete c.args;
+    const d = makeCoil(l, c.type);
+    c.op = d.op;
+    c.k = d.k;
+    return;
+  }
   if (typeChanged) {
     // Tür değişince işleneni uyumlu hâle getir (TMR→T, CNT→C, OUT/SET… T/C kullanamaz)
     const a = parseAddress(c.op).addr;
@@ -385,7 +449,7 @@ export type Slot =
 
 export type DragPayload =
   | { src: 'palette'; g: 'c'; k: ContactKind }
-  | { src: 'palette'; g: 'o'; k: CoilType }
+  | { src: 'palette'; g: 'o'; k: CoilType | string }
   | { src: 'ladder'; id: string; g: 'c' | 'o' };
 
 /** Bu nokta bu parçayı kabul eder mi? */
@@ -429,12 +493,12 @@ export function drop(l: Ladder, p: DragPayload, s: Slot, copy: boolean): EditRes
   let g: 'c' | 'o';
   if (p.src === 'palette') {
     g = p.g;
-    node = p.g === 'c' ? newContact(p.k, 'X0') : newCoilBranch(makeCoil(l, p.k));
+    node = p.g === 'c' ? paletteContact(p.k) : newCoilBranch(makeCoil(l, p.k));
   } else {
     const loc = locate(l, p.id);
     if (!loc || loc.kind === 'rung') return { sel: null };
     g = loc.kind === 'contact' ? 'c' : 'o';
-    if (loc.kind === 'contact') node = newContact(loc.node.kind, loc.node.op);
+    if (loc.kind === 'contact') node = { ...loc.node, id: nid() };
     else {
       if (moving && loc.up === null && loc.r.outputs.length === 1) return { sel: p.id, refuse: 'Satırın tek çıkışı taşınamaz; Ctrl basılı bırakıp kopyala ya da önce başka çıkış ekle' };
       node = copyBranch(loc.o);
@@ -482,7 +546,7 @@ export function drop(l: Ladder, p: DragPayload, s: Slot, copy: boolean): EditRes
 export function insertPart(l: Ladder, selId: string | null, p: Extract<DragPayload, { src: 'palette' }>): EditResult {
   const loc = locate(l, selId);
   if (p.g === 'c') {
-    const c = newContact(p.k, 'X0');
+    const c = paletteContact(p.k);
     if (!loc) l.rungs.push({ id: nid(), comment: '', input: [c], outputs: [newCoilBranch(makeCoil(l, 'OUT'))] });
     else if (loc.kind === 'contact') loc.series.splice(loc.index + 1, 0, c);
     else if (loc.kind === 'output') loc.o.pre.push(c);
@@ -521,7 +585,7 @@ export function pasteClip(l: Ladder, sel: string | null, clip: Clip): EditResult
     return { sel: r.id };
   }
   if (clip.k === 'contact') {
-    const c = newContact(clip.c.kind, clip.c.op);
+    const c: Contact = { ...clip.c, id: nid() };
     if (!loc) return { sel, refuse: 'Kontağı yapıştırmak için bir satır ya da kontak seç' };
     if (loc.kind === 'contact') loc.series.splice(loc.index + 1, 0, c);
     else if (loc.kind === 'output') loc.o.pre.push(c);
@@ -536,3 +600,11 @@ export function pasteClip(l: Ladder, sel: string | null, clip: Clip): EditResult
   tidy(l);
   return { sel: o.id };
 }
+
+/** Uygulama komutu biçimini değiştir (32 bit / darbe); biçim yoksa null */
+export function apiVariant(type: string, d32: boolean, pulse: boolean): string | null {
+  const base = INSTRUCTIONS[type]?.base;
+  return base ? apiMnemonic(base, d32, pulse) : null;
+}
+export { API_BASES };
+export type { CmpOp };

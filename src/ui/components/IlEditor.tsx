@@ -46,6 +46,7 @@ const ilLanguage = StreamLanguage.define<LexState>({
     const first = state.pos === 0;
     state.pos++;
     if (first) return 'ilmn';
+    if (/^K\d[XYMS]\d+$/i.test(word)) return 'ildev'; // K1Y0 bit grubu
     if (/^[KH]-?[0-9A-F]+$/i.test(word) || /^-?\d+$/.test(word)) return 'ilk';
     if (/^[XYMSTCD]\d+$/i.test(word)) return 'ildev';
     return null;

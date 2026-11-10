@@ -1667,3 +1667,75 @@ table.grid tr.on td.addr {
   flex: 1;
   padding-top: 40px;
 }
+
+/* karşılaştırma kontağı ve INV */
+.ladder .ct.cmp .cbox {
+  fill: var(--canvas);
+  stroke: var(--ink);
+  stroke-width: 1.8;
+}
+.ladder .ct.cmp.on .cbox {
+  stroke: var(--on);
+  fill: var(--on-soft);
+}
+.ladder .cmpop {
+  fill: var(--ink);
+  font-size: 14px;
+  font-weight: 700;
+  pointer-events: none;
+}
+.ladder .ct.inv .slash {
+  stroke-width: 2.6;
+}
+
+.kinds.cmpops {
+  grid-template-columns: repeat(6, 1fr);
+}
+.kinds.cmpops button {
+  height: 32px;
+  font-size: 13px;
+}
+.pair {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  gap: 6px;
+  align-items: end;
+  margin-top: 10px;
+}
+.pair .field + .field {
+  margin-top: 0;
+}
+.pairop {
+  padding-bottom: 7px;
+  font-weight: 700;
+  color: var(--accent);
+}
+.check {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--fs-s);
+  color: var(--ink-2);
+  margin-top: 8px;
+  cursor: pointer;
+}
+.checks {
+  margin-top: 4px;
+}
+.pair .field {
+  min-width: 0;
+}
+.pair .input {
+  width: 100%;
+  min-width: 0;
+}
+/* Eş aralıklı yazıda bitişik harf (ligature) yok: "<>" ve ">=" IL'de yazıldığı gibi görünsün */
+.mono,
+.input.mono,
+.ladder text,
+.kinds button,
+.cm-editor,
+kbd {
+  font-variant-ligatures: none;
+  font-feature-settings: 'liga' 0, 'calt' 0;
+}

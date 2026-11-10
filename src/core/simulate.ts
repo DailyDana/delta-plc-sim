@@ -59,12 +59,13 @@ export function simulate(text: string, opts: SimOptions): SimResult {
   const dt = opts.dt ?? 10;
   const events = [...(opts.events ?? [])].sort((a, b) => a.t - b.t);
   const used = m.usedDevices();
-  const watch = opts.watch ?? [...used.X, ...used.Y, ...used.M, ...used.S, ...used.T, ...used.C];
+  const watch = opts.watch ?? [...used.X, ...used.Y, ...used.M, ...used.S, ...used.T, ...used.C, ...used.D];
   const last = new Map<string, number>();
   const changes: Change[] = [];
   const sample = (t: number, initial: boolean) => {
     for (const d of watch) {
-      const v = d[0] === 'X' ? m.inputs[parseInt(d.slice(1), 8)] ?? 0 : m.bit(d);
+      // D kaydedicisi: değeri izlenir; diğerleri bit (T/C: kontak)
+      const v = d[0] === 'X' ? m.inputs[parseInt(d.slice(1), 8)] ?? 0 : d[0] === 'D' ? m.value(d) : m.bit(d);
       if (last.get(d) !== v) {
         if (!initial || v !== 0) changes.push({ t, dev: d, v });
         last.set(d, v);

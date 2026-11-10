@@ -1,7 +1,10 @@
 // Farklılık testi: v2 sanal makinesi, v1 ağaç motoruyla tarama tarama aynı sonucu vermeli.
 // Hem hazır örnekler hem de rastgele üretilmiş yüzlerce devre, rastgele girişlerle karşılaştırılır.
 import { describe, expect, it } from 'vitest';
-import { EXAMPLES, Machine } from '../src/core/index';
+import { EXAMPLES as ALL_EXAMPLES, Machine, V1_COUNT } from '../src/core/index';
+
+// v1 ile ortak örnekler (sonrakiler v2 komutlarını kullanır, v1 motoru çalıştıramaz)
+const EXAMPLES = ALL_EXAMPLES.slice(0, V1_COUNT);
 import { V1, V1_EXAMPLES } from './v1';
 
 // Belirlenimli rastgele sayı üreteci (mulberry32): hata çıkarsa aynı tohumla yeniden üretilebilir
@@ -56,6 +59,7 @@ function compare(il: string, seed: number, scans = 400): void {
 describe('v1 ile birebir eşdeğerlik', () => {
   it('örnekler v1 ile aynı (v1 examples.js ile TS kopyası da aynı)', () => {
     expect(EXAMPLES.map((e) => e.il)).toEqual(V1_EXAMPLES.map((e) => e.il));
+    expect(V1_EXAMPLES).toHaveLength(V1_COUNT);
   });
 
   for (const [i, ex] of EXAMPLES.entries()) {

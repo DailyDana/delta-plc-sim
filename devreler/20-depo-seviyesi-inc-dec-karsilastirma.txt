@@ -1,0 +1,27 @@
+#X0 kutu girdi
+#X1 kutu çıktı
+#X2 sıfırla
+#Y0 depo dolu
+#Y1 depo boş
+#Y2 orta seviye
+; Dene: X0 her basışta D0'ı 1 artırır, X1 azaltır; İzleme'de D0'ı izle
+; INCP: yalnızca basışın yükselen kenarında bir kez +1 (P olmasa her taramada artardı)
+LD X0
+INCP D0
+; X1: bir kutu çıktı, D0 bir azalır
+LD X1
+DECP D0
+; X2: sayımı sıfırla (MOV ile D0'a 0 yaz)
+LD X2
+MOV K0 D0
+; Karşılaştırma kontağı: D0 ≥ 5 ise depo dolu
+LD>= D0 K5
+OUT Y0
+; D0 ≤ 0 ise depo boş
+LD<= D0 K0
+OUT Y1
+; 3 ile 4 arasında: iki karşılaştırma seri bağlı (VE)
+LD>= D0 K3
+AND< D0 K5
+OUT Y2
+END

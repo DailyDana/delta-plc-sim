@@ -142,7 +142,7 @@ function cmdSim(a: Args, profileId: string | undefined): number {
   let lastT = -1;
   for (const c of r.changes) {
     const tt = c.t === lastT ? ''.padStart(9) : `${(c.t / 1000).toFixed(3)} s`.padStart(9);
-    console.log(`${tt}  ${c.dev} ${c.v ? '↑ 1' : '↓ 0'}`);
+    console.log(`${tt}  ${c.dev} ${c.dev[0] === 'D' ? '= ' + c.v : c.v ? '↑ 1' : '↓ 0'}`);
     lastT = c.t;
   }
   if (a.opt.dalga) {

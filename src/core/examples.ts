@@ -1,4 +1,5 @@
-// Hazır örnek devreler (IL). v1 examples.js ile aynı içerik; Aşama 2 ile tek kaynak burası olacak.
+// Hazır örnek devreler (IL). İlk V1_COUNT örnek v1 examples.js ile birebir aynıdır (eşdeğerlik testi);
+// sonrakiler v2 komutlarını (MOV, CMP, karşılaştırma kontakları…) kullanır ve yalnızca yeni arayüzde görünür.
 
 export interface Example {
   name: string;
@@ -82,4 +83,19 @@ export const EXAMPLES: readonly Example[] = [
     name: "OUT mühürleme ile SET/RST karşılaştırma",
     il: "#X0 start\n#X1 stop\n#Y0 OUT ile\n#Y1 SET/RST ile\n; Dene: X0 ve X1'e bas; iki lamba aynı davranır: aynı iş, iki farklı yol\n; 1. yol: mühürleme. Y0 kendi kontağıyla kendini tutar, stop kapalı kontağı bırakır\nLD X0\nOR Y0\nANI X1\nOUT Y0\n; 2. yol: SET kurar ve tutar, RST siler. Mühürleme kontağına gerek yok\nLD X0\nSET Y1\nLD X1\nRST Y1\nEND",
   },
+  {
+    name: "Depo seviyesi: INCP/DECP ve karşılaştırma",
+    il: "#X0 kutu girdi\n#X1 kutu çıktı\n#X2 sıfırla\n#Y0 depo dolu\n#Y1 depo boş\n#Y2 orta seviye\n; Dene: X0 her basışta D0'ı 1 artırır, X1 azaltır; İzleme'de D0'ı izle\n; INCP: yalnızca basışın yükselen kenarında bir kez +1 (P olmasa her taramada artardı)\nLD X0\nINCP D0\n; X1: bir kutu çıktı, D0 bir azalır\nLD X1\nDECP D0\n; X2: sayımı sıfırla (MOV ile D0'a 0 yaz)\nLD X2\nMOV K0 D0\n; Karşılaştırma kontağı: D0 ≥ 5 ise depo dolu\nLD>= D0 K5\nOUT Y0\n; D0 ≤ 0 ise depo boş\nLD<= D0 K0\nOUT Y1\n; 3 ile 4 arasında: iki karşılaştırma seri bağlı (VE)\nLD>= D0 K3\nAND< D0 K5\nOUT Y2\nEND",
+  },
+  {
+    name: "Sayıcı değeri lambalarda (MOV C0 K1Y0)",
+    il: "#X0 sayma\n#X1 sıfırla\n#Y0 bit 0 (1)\n#Y1 bit 1 (2)\n#Y2 bit 2 (4)\n#Y3 bit 3 (8)\n; Dene: X0'a basarak say; Y0–Y3 lambaları sayıyı ikilik gösterir, X1 sıfırlar\n; C0, 0'dan 15'e kadar sayar\nLD X0\nCNT C0 K15\n; Sayıcının değeri K1Y0'a, yani Y0–Y3 dört lambasına yazılır (ör. 5 = 0101: Y0 ve Y2)\nLD M1000\nMOV C0 K1Y0\n; Sıfırlama\nLD X1\nRST C0\nEND",
+  },
+  {
+    name: "CMP ile sıcaklık kontrolü",
+    il: "#X0 ısıt\n#X1 soğut\n#Y0 fan (sıcak)\n#Y1 hazır (tam)\n#Y2 ısıtıcı (soğuk)\n; Dene: X0 basılıyken sıcaklık D0 saniyede 1 artar, X1 azaltır; hedef 25\n; Başlangıçta (ilk tarama M1002) sıcaklık 20 olsun\nLD M1002\nMOV K20 D0\n; M1013 1 s saat; ANDP ile saniyede bir kez\nLD X0\nANDP M1013\nINC D0\nLD X1\nANDP M1013\nDEC D0\n; CMP: D0 ile 25'i karşılaştır → M10 büyük, M11 eşit, M12 küçük\nLD M1000\nCMP D0 K25 M10\n; Sonuç bitleri çıkışlara: sıcaksa fan, tamsa hazır, soğuksa ısıtıcı\nLD M10\nOUT Y0\nLD M11\nOUT Y1\nLD M12\nOUT Y2\nEND",
+  },
 ];
+
+/** v1 arayüzüyle ortak örnek sayısı */
+export const V1_COUNT = 19;

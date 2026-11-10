@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { EXAMPLES, Machine, drawLadderText, ilToLadder, ladderToIl, parseIl, parseLadder } from '../src/core/index';
+import { EXAMPLES, Machine, V1_COUNT, drawLadderText, ilToLadder, ladderToIl, parseIl, parseLadder } from '../src/core/index';
 import { V1 } from './v1';
 
 const roundTrip = (il: string): string => {
@@ -26,11 +26,18 @@ function sameBehaviour(a: string, b: string, inputs = ['X0', 'X1', 'X2', 'X3', '
 }
 
 describe('ladder ↔ IL', () => {
-  for (const ex of EXAMPLES) {
+  for (const ex of EXAMPLES.slice(0, V1_COUNT)) {
     it(`örnek gidiş-dönüş v1 ile aynı metin: ${ex.name}`, () => {
       const v1 = V1.toIL(V1.parseIL(ex.il).prog);
       expect(roundTrip(ex.il)).toBe(v1);
       expect(roundTrip(roundTrip(ex.il))).toBe(v1);
+    });
+  }
+
+  for (const ex of EXAMPLES.slice(V1_COUNT)) {
+    it(`v2 örneği gidiş-dönüş kararlı: ${ex.name}`, () => {
+      const once = roundTrip(ex.il);
+      expect(roundTrip(once)).toBe(once);
     });
   }
 

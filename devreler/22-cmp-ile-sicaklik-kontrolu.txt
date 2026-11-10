@@ -1,0 +1,27 @@
+#X0 ısıt
+#X1 soğut
+#Y0 fan (sıcak)
+#Y1 hazır (tam)
+#Y2 ısıtıcı (soğuk)
+; Dene: X0 basılıyken sıcaklık D0 saniyede 1 artar, X1 azaltır; hedef 25
+; Başlangıçta (ilk tarama M1002) sıcaklık 20 olsun
+LD M1002
+MOV K20 D0
+; M1013 1 s saat; ANDP ile saniyede bir kez
+LD X0
+ANDP M1013
+INC D0
+LD X1
+ANDP M1013
+DEC D0
+; CMP: D0 ile 25'i karşılaştır → M10 büyük, M11 eşit, M12 küçük
+LD M1000
+CMP D0 K25 M10
+; Sonuç bitleri çıkışlara: sıcaksa fan, tamsa hazır, soğuksa ısıtıcı
+LD M10
+OUT Y0
+LD M11
+OUT Y1
+LD M12
+OUT Y2
+END

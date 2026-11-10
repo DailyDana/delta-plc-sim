@@ -2,9 +2,9 @@
 // Tarama: giriş yenileme (X ← dış girişler) → program → çıkış yenileme (Y → dış çıkışlar).
 // Mantık akümülatör + blok yığını (LD/ANB/ORB) + MPS yığını ile değerlendirilir.
 
-import { formatAddress, parseAddress, type DevType } from './devices';
+import { formatAddress, parseAddress, type DevType, type WordRef } from './devices';
 import type { Diagnostic } from './diagnostics';
-import type { ContactKind, OpClass } from './instructions';
+import type { CmpOp, ContactKind, InstrDef, OpClass } from './instructions';
 import { analyze, parseIl, type IlProgram, type RungSpan } from './il';
 import { getProfile, isLatched, timerRange, type Profile } from './profiles';
 
@@ -26,6 +26,13 @@ interface Code {
   /** TMR taban süresi (ms) */
   base: number;
   accumulative: boolean;
+  def: InstrDef;
+  /** Kelime işlenenleri (uygulama komutları, karşılaştırma kontakları) */
+  w: (WordRef | null)[];
+  /** İşlenenlerin bit adresleri (CMP sonuç biti, ZRST aralığı, ALT) */
+  a: ({ type: DevType; index: number } | null)[];
+  /** TMR/CNT ayar değeri D'den okunuyorsa o kaydedici, değilse -1 */
+  kD: number;
 }
 
 export interface MachineOptions {
@@ -114,6 +121,10 @@ export class Machine {
         k: kOp && kOp.k !== undefined && !kOp.invalid ? kOp.k : 0,
         base: tr ? tr.baseMs : 100,
         accumulative: tr ? tr.accumulative : false,
+        def: it.def,
+        w: it.ops.map((o) => (o.invalid ? null : o.word ?? null)),
+        a: it.ops.map((o) => (o.invalid || !o.addr ? null : { type: o.addr.type, index: o.addr.index })),
+        kD: kOp && !kOp.invalid && kOp.addr?.type === 'D' && (it.mn === 'TMR' || it.mn === 'CNT') ? kOp.addr.index : -1,
       };
     });
     const n = this.code.length;
@@ -128,8 +139,8 @@ export class Machine {
     this.mstack = new Uint8Array(n + 1);
     // ayar değerleri baştan bilinsin (değer ekranında "0/50" görünsün)
     this.code.forEach((c) => {
-      if (c.type === 'T' && c.mn === 'TMR') this.Tsv[c.index] = c.k;
-      if (c.type === 'C' && c.mn === 'CNT') this.Csv[c.index] = c.k;
+      if (c.type === 'T' && c.mn === 'TMR' && c.kD < 0) this.Tsv[c.index] = c.k;
+      if (c.type === 'C' && c.mn === 'CNT' && c.kD < 0) this.Csv[c.index] = c.k;
     });
   }
 
@@ -238,9 +249,13 @@ export class Machine {
 
   private write(type: DevType | null, index: number, v: boolean): void {
     const b = v ? 1 : 0;
-    if (type === 'Y') this.Y[index] = b;
-    else if (type === 'M') this.M[index] = b;
-    else if (type === 'S') this.S[index] = b;
+    if (type === 'Y') {
+      if (index < this.Y.length) this.Y[index] = b;
+    } else if (type === 'M') {
+      if (index < this.M.length) this.M[index] = b;
+    } else if (type === 'S') {
+      if (index < this.S.length) this.S[index] = b;
+    }
   }
 
   /** Dış girişi ayarla: "X10" ya da sıra numarası */
@@ -285,6 +300,10 @@ export class Machine {
         case 'and':
           acc = acc & this.contact(i, c);
           break;
+        case 'inv':
+          acc = acc ^ 1;
+          this.closed[i] = acc;
+          break;
         case 'or':
           acc = acc | this.contact(i, c);
           break;
@@ -314,6 +333,12 @@ export class Machine {
   }
 
   private contact(i: number, c: Code): number {
+    if (c.contact === 'CMP') {
+      const d32 = !!c.def.d32;
+      const v = c.w[0] && c.w[1] && compare(this.readW(c.w[0], d32), this.readW(c.w[1], d32), c.def.cmp ?? '=') ? 1 : 0;
+      this.closed[i] = v;
+      return v;
+    }
     const cur = c.type !== null && this.read(c.type, c.index) ? 1 : 0;
     const prev = this.edge[i]!;
     this.edge[i] = cur;
@@ -329,6 +354,10 @@ export class Machine {
   }
 
   private output(i: number, c: Code, q: boolean, dt: number): void {
+    if (c.def.base) {
+      this.api(i, c, q);
+      return;
+    }
     if (c.type === null) return; // geçersiz işlenen: yazma yok
     const idx = c.index;
     switch (c.mn) {
@@ -351,7 +380,7 @@ export class Machine {
         else this.write(c.type, idx, false);
         break;
       case 'TMR': {
-        const k = c.k;
+        const k = c.kD >= 0 ? Math.max(0, this.D[c.kD] ?? 0) : c.k;
         this.Tsv[idx] = k;
         if (q) {
           this.Tacc[idx] = Math.min(this.Tacc[idx]! + dt, k * c.base);
@@ -365,11 +394,16 @@ export class Machine {
         break;
       }
       case 'CNT': {
-        const k = c.k < 1 ? 1 : c.k; // K0, K1 ile aynıdır (Delta EH3/SV2 kılavuzu s.2-19)
+        const k0 = c.kD >= 0 ? (this.D[c.kD] ?? 0) : c.k;
+        const k = k0 < 1 ? 1 : k0; // K0, K1 ile aynıdır (Delta EH3/SV2 kılavuzu s.2-19)
         this.Csv[idx] = k;
         const prev = this.priming ? (q ? 1 : 0) : this.coilPrev[i]!;
         this.coilPrev[i] = q ? 1 : 0;
-        if (q && !prev && this.Ccv[idx]! < k) this.Ccv[idx]!++;
+        // Ayar değerinde durur; MOV ile ayarın üstü yazılmışsa sonraki kenarda ayara eşitlenir (ES2 s.2-26)
+        if (q && !prev) {
+          if (this.Ccv[idx]! < k) this.Ccv[idx]!++;
+          else if (this.profile.id !== 'v1') this.Ccv[idx] = k; // v1 sadeleştirilmiş: değer korunur
+        }
         this.Cdone[idx] = this.Ccv[idx]! >= k ? 1 : 0;
         break;
       }
@@ -386,6 +420,194 @@ export class Machine {
         break;
       }
     }
+  }
+
+  // ---------------------------------------------------------------- kelime işlemleri
+  private timerBase(index: number): number {
+    return timerRange(this.profile, index)?.baseMs ?? 100;
+  }
+
+  /** Kelime oku. 16 bit: işaretli (−32768…32767); K1–K3 bit grupları her zaman pozitif (s.3-20). */
+  readW(r: WordRef, d32: boolean): number {
+    switch (r.k) {
+      case 'const':
+        return r.v;
+      case 'dev':
+        if (r.type === 'D') return d32 ? ((this.D[r.index + 1] ?? 0) << 16) | ((this.D[r.index] ?? 0) & 0xffff) : this.D[r.index] ?? 0;
+        if (r.type === 'T') return this.Tcv[r.index] ?? 0;
+        return this.Ccv[r.index] ?? 0;
+      case 'kn': {
+        const bits = r.n * 4;
+        let v = 0;
+        for (let b = 0; b < bits; b++) if (this.read(r.type, r.index + b)) v = (v | (1 << b)) >>> 0;
+        if (bits === 16 && !d32) return (v << 16) >> 16;
+        if (bits === 32) return v | 0;
+        return v;
+      }
+    }
+  }
+
+  /** Kelime yaz: 16 bit hedefte ikiye tümleyen sarma; Kn hedefte yalnızca n×4 bit değişir */
+  writeW(r: WordRef, v: number, d32: boolean): void {
+    switch (r.k) {
+      case 'const':
+        return;
+      case 'dev': {
+        const i = r.index;
+        if (r.type === 'D') {
+          if (i >= this.D.length) return;
+          this.D[i] = v & 0xffff;
+          if (d32 && i + 1 < this.D.length) this.D[i + 1] = (v >> 16) & 0xffff;
+        } else if (r.type === 'T') {
+          if (i >= this.Tcv.length) return;
+          const cv = d32 ? v | 0 : (v << 16) >> 16;
+          this.Tcv[i] = cv;
+          this.Tacc[i] = cv * this.timerBase(i);
+        } else if (i < this.Ccv.length) this.Ccv[i] = d32 ? v | 0 : (v << 16) >> 16;
+        return;
+      }
+      case 'kn':
+        for (let b = 0; b < r.n * 4; b++) this.write(r.type, r.index + b, ((v >>> b) & 1) === 1);
+        return;
+    }
+  }
+
+  /** ADD/SUB bayrakları: M1020 sıfır, M1021 borç, M1022 elde (s.3-74) */
+  private setFlags(exact: number, stored: number, min: number, max: number): void {
+    this.M[1020] = stored === 0 ? 1 : 0;
+    this.M[1021] = exact < min ? 1 : 0;
+    this.M[1022] = exact > max ? 1 : 0;
+  }
+
+  /** Uygulama komutu (MOV, CMP, ADD…). P biçimi yalnızca akımın yükselen kenarında bir kez çalışır (s.3-17). */
+  private api(i: number, c: Code, q: boolean): void {
+    const def = c.def;
+    const prev = this.priming ? (q ? 1 : 0) : this.coilPrev[i]!;
+    this.coilPrev[i] = q ? 1 : 0;
+    if (!q || (def.pulse && prev)) return; // yürütülmezse hedefler ve bayraklar korunur (s.3-18, 3-61)
+    const d32 = !!def.d32;
+    const w = c.w;
+    const R = (k: number): number => (w[k] ? this.readW(w[k]!, d32) : 0);
+    const W = (k: number, v: number): void => {
+      if (w[k]) this.writeW(w[k]!, v, d32);
+    };
+    const min = d32 ? -2147483648 : -32768;
+    const max = d32 ? 2147483647 : 32767;
+    const wrap = (v: number): number => (d32 ? v | 0 : (v << 16) >> 16);
+    switch (def.base) {
+      case 'MOV':
+        W(1, R(0));
+        break;
+      case 'CMP': {
+        const a = R(0);
+        const b = R(1);
+        this.bits3(c.a[2], a > b, a === b, a < b);
+        break;
+      }
+      case 'ZCP': {
+        const lo = R(0);
+        let hi = R(1);
+        const v = R(2);
+        if (lo > hi) hi = lo; // S1 > S2: S1 tek karşılaştırma değeri olur (s.3-60)
+        this.bits3(c.a[3], v < lo, v >= lo && v <= hi, v > hi);
+        break;
+      }
+      case 'ADD':
+      case 'SUB': {
+        const exact = def.base === 'ADD' ? R(0) + R(1) : R(0) - R(1);
+        const stored = wrap(exact);
+        W(2, stored);
+        this.setFlags(exact, stored, min, max);
+        break;
+      }
+      case 'MUL': {
+        const dst = w[2];
+        if (!dst) break;
+        if (!d32) {
+          const prod = R(0) * R(1); // 16×16 → 32 bit: (D+1, D) (s.3-77)
+          this.writeW(dst, prod | 0, true);
+          this.M[1020] = prod === 0 ? 1 : 0;
+        } else {
+          const prod = BigInt(R(0)) * BigInt(R(1)); // 32×32 → 64 bit: (D+3 … D)
+          this.writeW(dst, Number(BigInt.asIntN(32, prod)), true);
+          if (dst.k === 'dev' && dst.type === 'D') this.writeW({ k: 'dev', type: 'D', index: dst.index + 2 }, Number(BigInt.asIntN(32, prod >> 32n)), true);
+          this.M[1020] = prod === 0n ? 1 : 0;
+        }
+        break;
+      }
+      case 'DIV': {
+        const a = R(0);
+        const b = R(1);
+        if (b === 0) {
+          // Sıfıra bölme: yürütülmez; M1067/M1068 ON, D1067 = 0E19 (s.3-79), D1068 = hatalı komutun adresi
+          this.M[1067] = 1;
+          this.M[1068] = 1;
+          if (this.D.length > 1068) {
+            this.D[1067] = 0x0e19;
+            this.D[1068] = i;
+          }
+          break;
+        }
+        const quo = Math.trunc(a / b);
+        const rem = a % b;
+        W(2, wrap(quo));
+        const dst = w[2];
+        if (dst && dst.k === 'dev' && dst.type === 'D') this.writeW({ k: 'dev', type: 'D', index: dst.index + (d32 ? 2 : 1) }, rem, d32);
+        this.M[1020] = quo === 0 ? 1 : 0;
+        break;
+      }
+      case 'INC':
+        W(0, wrap(R(0) + 1)); // sınırda sarar, bayrakları etkilemez (s.3-81)
+        break;
+      case 'DEC':
+        W(0, wrap(R(0) - 1));
+        break;
+      case 'WAND':
+        W(2, R(0) & R(1));
+        break;
+      case 'WOR':
+        W(2, R(0) | R(1));
+        break;
+      case 'WXOR':
+        W(2, R(0) ^ R(1));
+        break;
+      case 'ZRST': {
+        const a = c.a[0];
+        const b = c.a[1];
+        if (!a || !b || a.type !== b.type) break;
+        const from = a.index > b.index ? b.index : a.index; // D1 > D2 ise yalnızca D2 (s.3-102)
+        for (let k = from; k <= b.index; k++) this.resetDev(a.type, k);
+        break;
+      }
+      case 'ALT': {
+        const a = c.a[0];
+        if (a) this.write(a.type, a.index, !this.read(a.type, a.index));
+        break;
+      }
+    }
+  }
+
+  private bits3(a: { type: DevType; index: number } | null | undefined, b0: boolean, b1: boolean, b2: boolean): void {
+    if (!a) return;
+    this.write(a.type, a.index, b0);
+    this.write(a.type, a.index + 1, b1);
+    this.write(a.type, a.index + 2, b2);
+  }
+
+  /** RST ile aynı: bit 0; T/C değer ve kontak 0; D 0 */
+  private resetDev(type: DevType, idx: number): void {
+    if (type === 'T') {
+      if (idx >= this.Tcv.length) return;
+      this.Tacc[idx] = 0;
+      this.Tcv[idx] = 0;
+      this.Tdone[idx] = 0;
+    } else if (type === 'C') {
+      if (idx >= this.Ccv.length) return;
+      this.Ccv[idx] = 0;
+      this.Cdone[idx] = 0;
+    } else if (type === 'D') {
+      if (idx < this.D.length) this.D[idx] = 0;
+    } else this.write(type, idx, false);
   }
 
   /** "Y0" → 0/1; "T0" → kontak durumu. Değer için value() kullan. */
@@ -433,3 +655,13 @@ export class Machine {
   }
 }
 
+function compare(a: number, b: number, op: CmpOp): boolean {
+  switch (op) {
+    case '=': return a === b;
+    case '>': return a > b;
+    case '<': return a < b;
+    case '<>': return a !== b;
+    case '<=': return a <= b;
+    case '>=': return a >= b;
+  }
+}

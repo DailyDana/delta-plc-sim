@@ -1,7 +1,7 @@
 // Ladder ağacını çizilecek sahneye çevirir (saf fonksiyon: test edilebilir, React'ten bağımsız).
 // Her tel bir "güç anahtarı" taşır; canlı görünümde anahtarın değeri teli yeşile boyar.
 
-import type { Coil, ContactKind, Ladder, OutBranch, Series, Block } from '../../core';
+import type { Coil, Contact, ContactKind, Ladder, OutBranch, Series, Block } from '../../core';
 import type { Slot } from '../state/edit';
 
 export const CW = 92; // kontak hücresi
@@ -23,6 +23,7 @@ export interface ContactItem {
   id: string;
   kind: ContactKind;
   op: string;
+  c: Contact;
   x: number;
   cy: number;
   ri: number;
@@ -140,7 +141,7 @@ export function layout(l: Ladder): Scene {
       const m = x + CW / 2;
       wire(x, cy, m - 10, cy, b.id + ':in');
       wire(m + 10, cy, x + CW, cy, b.id + ':out');
-      sc.contacts.push({ id: b.id, kind: b.kind, op: b.op, x, cy, ri });
+      sc.contacts.push({ id: b.id, kind: b.kind, op: b.op, c: b, x, cy, ri });
       sc.order.push({ id: b.id, ri, x: m, y: cy });
       sc.slots.push({ t: 'p', id: b.id, x: m, y: cy + RH / 2 - 4 });
       return;

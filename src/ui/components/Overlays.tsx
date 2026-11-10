@@ -129,6 +129,13 @@ export function HelpModal() {
           </ul>
           <h3>Zamanlayıcılar</h3>
           <p>Taban süre modele göre değişir (üst çubukta model seçimi). DVP-ES2'de T0–T126 ve T128–T199 100 ms, T127 1 ms, T200–T239 10 ms; T240–T255 birikimli: akım kesilince değer korunur, RST ile sıfırlanır. <code>TMR T0 K50</code> = 5 s.</p>
+          <h3>Veri komutları</h3>
+          <ul>
+            <li>D0, D1… 16 bit sayı tutar (−32768…32767). İzleme sekmesinde değerleri görünür; fonksiyon kutusunun altında canlı yazar.</li>
+            <li><code>MOV K10 D0</code> taşır, <code>ADD D0 K1 D1</code> toplar, <code>INCP D0</code> her basışta 1 artırır (P: yalnızca basış anında bir kez).</li>
+            <li>Karşılaştırma kontağı <code>LD&gt;= D0 K5</code>: D0 ≥ 5 ise kapanır. <code>CMP D0 K25 M10</code>: M10 büyük, M11 eşit, M12 küçük.</li>
+            <li><code>K1Y0</code> = Y0–Y3 dört lambası: <code>MOV C0 K1Y0</code> sayıcıyı ikilik gösterir.</li>
+          </ul>
           <h3>IL kuralları</h3>
           <p>X/Y adresleri sekizliktir (X0–X7, X10–X17; X8 yoktur). <code>#X0 start</code> satırı cihaza etiket verir, <code>;</code> açıklamadır. Bir satır, çıkış komutundan sonra gelen ilk LD ile başlar.</p>
           <p className="muted">Bu bir öğrenme aracıdır; gerçek PLC'nin yerini tutmaz. Delta Electronics ile bağlantısı yoktur.</p>
