@@ -1,0 +1,30 @@
+#X0 talep
+#X1 yüksek talep
+#Y0 pompa 1
+#Y1 pompa 2
+; Dene: X0'ı sağ tıkla kilitle, tekrar sağ tıkla bırak; X1 yüksek talep
+; Her talep bitince (X0 düşen kenarı) M1 bir tarama 1 olur, sıra öbür pompaya geçer
+LDF X0
+OUT M1
+; Talep bitince (düşen kenar) sıra değişir: M10 0 ise kur, 1 ise sil
+LD M1
+ANI M10
+OUT M2
+LD M1
+AND M10
+OUT M3
+LD M2
+SET M10
+LD M3
+RST M10
+; Sıra M10 = 0: pompa 1; yüksek talepte pompa 1 de yardım eder
+LD X0
+ANI M10
+OR X1
+OUT Y0
+; Sıra M10 = 1: pompa 2; yüksek talepte pompa 2 de çalışır
+LD X0
+AND M10
+OR X1
+OUT Y1
+END

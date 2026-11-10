@@ -1,0 +1,21 @@
+#X0 ileri
+#X1 stop
+#X2 geri
+#Y0 ileri (K1)
+#Y1 geri (K2)
+; Dene: X0 ileri, X2 geri, X1 stop; motor dönerken ters butona da bas
+; İki yön asla aynı anda açılmaz: karşı yönün kapalı kontağı (Y1) seri bağlı
+LD X0
+OR Y0
+ANI X1
+ANI X2
+ANI Y1
+OUT Y0
+; Geri yön: ileri satırının aynısı; X0 buton kilidi, Y0 kontaktör kilidi
+LD X2
+OR Y1
+ANI X1
+ANI X0
+ANI Y0
+OUT Y1
+END

@@ -1,0 +1,23 @@
+#X0 start
+#X1 stop
+#Y0 motor 1
+#Y1 motor 2
+#Y2 motor 3
+; Dene: X0'a bas; motorlar 4 s arayla tek tek kalkar, X1 hepsini durdurur
+; Start ile M0 mühürlenir (kendi kontağıyla tutar), stop bırakır
+LD X0
+OR M0
+ANI X1
+OUT M0
+; Motor 1 hemen kalkar, T0 4 s saymaya başlar
+LD M0
+OUT Y0
+TMR T0 K40
+; T0 doldu: motor 2 kalkar, T1 4 s sayar
+LD T0
+OUT Y1
+TMR T1 K40
+; T1 doldu: motor 3 kalkar. Stop'ta M0 düşer, zincir sondan geriye çözülür
+LD T1
+OUT Y2
+END

@@ -1,0 +1,38 @@
+#X0 start
+#X1 stop
+#Y0 bant 1 besleme
+#Y1 bant 2
+#Y2 bant 3 çıkış
+; Dene: X0 → bantlar sondan başa kalkar; X1 → baştan sona durur (3 s arayla)
+; Start: çalışma isteği (M0) kurulur, duruş süreci (M1) iptal edilir
+LD X0
+SET M0
+RST M1
+; Stop: çalışma isteği (M0) silinir, duruş süreci (M1) başlar
+LD X1
+RST M0
+SET M1
+; Kalkış çıkıştan başlar: malzeme yığılmasın diye önce bant 3 döner
+LD M0
+SET Y2
+TMR T0 K30
+; 3 s sonra bant 2
+LD T0
+SET Y1
+TMR T1 K30
+; 3 s sonra bant 1 (besleme) en son kalkar
+LD T1
+SET Y0
+; Duruş önce beslemeden: bant 1 hemen durur, üstündeki malzeme boşalsın
+LD M1
+RST Y0
+TMR T2 K30
+; 3 s sonra bant 2 durur
+LD T2
+RST Y1
+TMR T3 K30
+; 3 s sonra bant 3 durur ve duruş süreci biter
+LD T3
+RST Y2
+RST M1
+END

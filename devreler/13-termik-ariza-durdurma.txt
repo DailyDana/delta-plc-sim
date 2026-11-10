@@ -1,0 +1,32 @@
+#X0 start
+#X1 stop
+#X2 termik attı
+#X3 arıza reset
+#Y0 motor 1
+#Y1 motor 2
+#Y5 arıza lambası
+; Dene: X0 çalıştır, X2 termik atar; lamba yanıp söner, X3 ile onayla
+; Termik atınca arıza belleği M5 kurulur (X2 bırakılsa da kalır)
+LD X2
+SET M5
+; Reset ancak termik düzelmişse (X2 bırakılmışsa) arızayı siler
+LD X3
+ANI X2
+RST M5
+; Stop ya da arıza mühürlemeyi bırakır; arıza sürerken start işlemez
+LD X0
+OR M0
+ANI X1
+ANI M5
+OUT M0
+; Motor 1 hemen, motor 2 3 s sonra kalkar (kalkış akımları çakışmasın)
+LD M0
+OUT Y0
+TMR T0 K30
+LD T0
+OUT Y1
+; Arıza lambası 1 s saatle (M1013) yanıp söner
+LD M5
+AND M1013
+OUT Y5
+END

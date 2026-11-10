@@ -1,0 +1,28 @@
+#X0 start
+#X1 stop
+#X2 şişe sensörü
+#Y0 konveyör
+#Y1 paketleme
+; Dene: X0 hattı çalıştırır; X2'ye 6 kez bas, koli dolunca paketleme 3 s
+; Paketlemede konveyör durur, bitince kendiliğinden yeniden döner
+LD X0
+OR M0
+ANI X1
+OUT M0
+; Konveyör, hat çalışırken ve paketleme yokken döner
+LD M0
+ANI Y1
+OUT Y0
+; Konveyör dönerken geçen her şişe sayılır (6 şişe = 1 koli)
+LD X2
+AND Y0
+CNT C0 K6
+; Koli doldu: paketleme motoru 3 s çalışır
+LD C0
+OUT Y1
+TMR T0 K30
+; Süre bitti ya da stop: sayıcı sıfırlanır, konveyör yeniden döner
+LD T0
+OR X1
+RST C0
+END
