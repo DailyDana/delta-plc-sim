@@ -1,6 +1,7 @@
 #X0 start
 #X1 stop
 #Y0 motor
+; Dene: X0'a kısa bas; motor çalışır ve bırakınca da çalışmaya devam eder. X1 durdurur
 ; Klasik mühürleme: Y0 kendi kontağıyla kendini tutar, stop (kapalı kontak) bırakır
 LD X0
 OR Y0

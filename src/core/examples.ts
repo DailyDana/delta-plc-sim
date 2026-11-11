@@ -1,5 +1,5 @@
-// Hazır örnek devreler (IL). İlk V1_COUNT örnek v1 examples.js ile birebir aynıdır (eşdeğerlik testi);
-// sonrakiler v2 komutlarını (MOV, CMP, karşılaştırma kontakları…) kullanır ve yalnızca yeni arayüzde görünür.
+// Hazır örnek devreler (IL). Bu dosya tools/ornekler.cjs ile devreler/*.txt dosyalarından ÜRETİLİR; elle düzenleme.
+// İlk V1_COUNT örnek v1 examples.js ile birebir aynıdır (eşdeğerlik testi); sonrakiler yalnızca yeni arayüzde görünür.
 
 export interface Example {
   name: string;
@@ -9,35 +9,35 @@ export interface Example {
 export const EXAMPLES: readonly Example[] = [
   {
     name: "Tahtadaki devre (fotoğraf)",
-    il: "#X0 start\n#X1 stop\n; Start'a basınca M0 kurulur (SET)\nLD X0\nSET M0\n; M0 kapalı kontak (tahtada |/| çizili) -> Y0 ve T0 (15 s)\nLDI M0\nOUT Y0\nTMR T0 K150\n; T0 dolunca M0 sıfırlanır\nLD T0\nRST M0\n; T0 dolunca Y1 yanar\nLD T0\nOUT Y1\n; Stop: T0'ı sıfırla ve T1'i (10 s) çalıştır\nLD X1\nRST T0\nTMR T1 K100\n; T1 dolunca Y2 yanar ve T2 (20 s) başlar\nLD T1\nOUT Y2\nTMR T2 K200\n; T2 dolunca T1 sıfırlanır (fotoğrafın devamı kesik)\nLD T2\nRST T1\nEND",
+    il: "#X0 start\n#X1 stop\n; Dene: bir şeye basma; Y0 yanık başlar, 15 s sonra Y1 yanar. X0'a bas: Y0 ve Y1 söner.\n; X1'i 10 s basılı tut: Y2 yanar. (Tahtadan olduğu gibi alındı; fotoğraf kesik olduğu için devre yarım)\n; Start'a basınca M0 kurulur (SET)\nLD X0\nSET M0\n; M0 kapalı kontak (tahtada |/| çizili) -> Y0 ve T0 (15 s)\nLDI M0\nOUT Y0\nTMR T0 K150\n; T0 dolunca M0 sıfırlanır\nLD T0\nRST M0\n; T0 dolunca Y1 yanar\nLD T0\nOUT Y1\n; Stop: T0'ı sıfırla ve T1'i (10 s) çalıştır\nLD X1\nRST T0\nTMR T1 K100\n; T1 dolunca Y2 yanar ve T2 (20 s) başlar\nLD T1\nOUT Y2\nTMR T2 K200\n; T2 dolunca T1 sıfırlanır (fotoğrafın devamı kesik)\nLD T2\nRST T1\nEND",
   },
   {
     name: "Mühürleme (start-stop)",
-    il: "#X0 start\n#X1 stop\n#Y0 motor\n; Klasik mühürleme: Y0 kendi kontağıyla kendini tutar, stop (kapalı kontak) bırakır\nLD X0\nOR Y0\nANI X1\nOUT Y0\nEND",
+    il: "#X0 start\n#X1 stop\n#Y0 motor\n; Dene: X0'a kısa bas; motor çalışır ve bırakınca da çalışmaya devam eder. X1 durdurur\n; Klasik mühürleme: Y0 kendi kontağıyla kendini tutar, stop (kapalı kontak) bırakır\nLD X0\nOR Y0\nANI X1\nOUT Y0\nEND",
   },
   {
     name: "SET / RST ile motor",
-    il: "#X0 start\n#X1 stop\n#Y0 motor\n; Start motoru kurar\nLD X0\nSET Y0\n; Stop motoru sıfırlar (sonra yazılan satır öncelikli)\nLD X1\nRST Y0\nEND",
+    il: "#X0 start\n#X1 stop\n#Y0 motor\n; Dene: X0 motoru çalıştırır, X1 durdurur. İkisine birlikte basarsan motor durur (RST sonra yazıldı)\n; Start motoru kurar\nLD X0\nSET Y0\n; Stop motoru sıfırlar (sonra yazılan satır öncelikli)\nLD X1\nRST Y0\nEND",
   },
   {
     name: "Yıldız-üçgen yol verme",
-    il: "#X0 start\n#X1 stop\n#Y0 ana kontaktör\n#Y1 yıldız\n#Y2 üçgen\n; Çalışma rölesi M0 (mühürlemeli)\nLD X0\nOR M0\nANI X1\nOUT M0\n; M0 açıkken: Y0 ana, T0 5 s, önce yıldız sonra üçgen\nLD M0\nMPS\nOUT Y0\nMRD\nTMR T0 K50\nMRD\nANI T0\nOUT Y1\nMPP\nAND T0\nOUT Y2\nEND",
+    il: "#X0 start\n#X1 stop\n#Y0 ana kontaktör\n#Y1 yıldız\n#Y2 üçgen\n; Dene: X0'a bas. Ana ve yıldız çeker; 5 s sonra yıldız bırakır, 0,5 s boşluktan sonra üçgen çeker. X1 durdurur\n; Çalışma rölesi M0 (mühürlemeli)\nLD X0\nOR M0\nANI X1\nOUT M0\n; M0 açıkken: Y0 ana; T0 5 s yıldız süresi, T1 5,5 s (0,5 s geçiş boşluğu); Y1 ve Y2 birbirinin kapalı kontağıyla kilitli\nLD M0\nMPS\nOUT Y0\nMRD\nTMR T0 K50\nMRD\nTMR T1 K55\nMRD\nANI T0\nANI Y2\nOUT Y1\nMPP\nAND T1\nANI Y1\nOUT Y2\nEND",
   },
   {
     name: "Trafik lambası (döngü)",
-    il: "#Y0 kırmızı\n#Y1 sarı\n#Y2 yeşil\n; T0 kırmızı 5 s, T1 sarı 2 s, T2 yeşil 5 s; T2 dolunca hepsi sıfırlanıp döngü başa döner\nLDI T2\nTMR T0 K50\nLD T0\nTMR T1 K20\nLD T1\nTMR T2 K50\nLDI T0\nOUT Y0\nLD T0\nANI T1\nOUT Y1\nLD T1\nOUT Y2\nEND",
+    il: "#Y0 kırmızı\n#Y1 sarı\n#Y2 yeşil\n; Dene: yalnızca RUN'a bas ve izle, giriş gerekmez\n; T0 kırmızı 5 s, T1 sarı 2 s, T2 yeşil 5 s; T2 dolunca hepsi sıfırlanıp döngü başa döner\nLDI T2\nTMR T0 K50\nLD T0\nTMR T1 K20\nLD T1\nTMR T2 K50\nLDI T0\nOUT Y0\nLD T0\nANI T1\nOUT Y1\nLD T1\nOUT Y2\nEND",
   },
   {
     name: "Sayıcı (5 parça)",
-    il: "#X0 sensör\n#X1 reset\n#Y0 kutu dolu\n; Her X0 basışında C0 bir artar; 5 olunca Y0 yanar\nLD X0\nCNT C0 K5\nLD C0\nOUT Y0\n; X1 sayıcıyı sıfırlar\nLD X1\nRST C0\nEND",
+    il: "#X0 sensör\n#X1 reset\n#Y0 kutu dolu\n; Dene: X0'a 5 kez bas; beşincide Y0 yanar. X1 sayıcıyı sıfırlar\n; Her X0 basışında C0 bir artar; 5 olunca Y0 yanar\nLD X0\nCNT C0 K5\nLD C0\nOUT Y0\n; X1 sayıcıyı sıfırlar\nLD X1\nRST C0\nEND",
   },
   {
     name: "Tek butonla aç/kapa (PLS)",
-    il: "#X0 buton\n#Y0 lamba\n; X0'ın yükselen kenarında M0 tek tarama 1 olur\nLD X0\nPLS M0\n; Y0 = M0 XOR Y0  -> her basışta durum değişir (LD + ORB örneği)\nLD M0\nANI Y0\nLDI M0\nAND Y0\nORB\nOUT Y0\nEND",
+    il: "#X0 buton\n#Y0 lamba\n; Dene: X0'a her basışta lamba durum değiştirir; basılı tutmak bir şey değiştirmez\n; X0'ın yükselen kenarında M0 tek tarama 1 olur\nLD X0\nPLS M0\n; Y0 = M0 XOR Y0  -> her basışta durum değişir (LD + ORB örneği)\nLD M0\nANI Y0\nLDI M0\nAND Y0\nORB\nOUT Y0\nEND",
   },
   {
     name: "Flaşör (M1013 1 s saat)",
-    il: "#X0 anahtar\n#Y0 flaşör\n; M1013 özel rölesi 0,5 s açık / 0,5 s kapalı çakar\nLD X0\nAND M1013\nOUT Y0\nEND",
+    il: "#X0 anahtar\n#Y0 flaşör\n; Dene: X0'ı kilitle (sağ tık); lamba saniyede bir yanıp söner\n; M1013 özel rölesi 0,5 s açık / 0,5 s kapalı çakar\nLD X0\nAND M1013\nOUT Y0\nEND",
   },
   {
     name: "Üç motor sıralı kalkış",
@@ -94,6 +94,22 @@ export const EXAMPLES: readonly Example[] = [
   {
     name: "CMP ile sıcaklık kontrolü",
     il: "#X0 ısıt\n#X1 soğut\n#Y0 fan (sıcak)\n#Y1 hazır (tam)\n#Y2 ısıtıcı (soğuk)\n; Dene: X0 basılıyken sıcaklık D0 saniyede 1 artar, X1 azaltır; hedef 25\n; Başlangıçta (ilk tarama M1002) sıcaklık 20 olsun\nLD M1002\nMOV K20 D0\n; M1013 1 s saat; ANDP ile saniyede bir kez\nLD X0\nANDP M1013\nINC D0\nLD X1\nANDP M1013\nDEC D0\n; CMP: D0 ile 25'i karşılaştır → M10 büyük, M11 eşit, M12 küçük\nLD M1000\nCMP D0 K25 M10\n; Sonuç bitleri çıkışlara: sıcaksa fan, tamsa hazır, soğuksa ısıtıcı\nLD M10\nOUT Y0\nLD M11\nOUT Y1\nLD M12\nOUT Y2\nEND",
+  },
+  {
+    name: "Gecikmeli kapanma (bırakınca 5 s)",
+    il: "#X0 anahtar\n#Y0 lamba\n; Dene: X0'ı basılı tut, lamba hemen yanar. Bırak: lamba 5 s daha yanık kalır, sonra söner\n; Lamba anahtar basılıyken ya da kendi mührüyle yanar; T0 dolunca söner\nLD X0\nOR Y0\nANI T0\nOUT Y0\n; Anahtar bırakılınca (lamba yanık, X0 yok) T0 saymaya başlar (5 s)\nLD Y0\nANI X0\nTMR T0 K50\nEND",
+  },
+  {
+    name: "İki zamanlayıcılı flaşör",
+    il: "#X0 anahtar\n#Y0 lamba\n; Dene: X0'ı kilitle (sağ tık). Lamba 1 s sönük, 2 s yanık olarak yanıp söner\n; T0 sönük kalma süresini sayar (1 s). T1 dolunca T0 sıfırlanır ve döngü baştan başlar\nLD X0\nANI T1\nTMR T0 K10\n; T0 dolunca lamba yanar ve T1 yanık kalma süresini sayar (2 s)\nLD T0\nOUT Y0\nTMR T1 K20\nEND",
+  },
+  {
+    name: "Kenar algılama (LDP / LDF)",
+    il: "#X0 buton\n#Y1 bırakınca yanan lamba\n; Dene: X0'ı 1 s basılı tut ve bırak. D0 yüz kadar artar, D1 yalnızca 1 artar; bırakınca Y1 3 s yanar\n; Kenarsız: X0 basılı olduğu sürece HER TARAMADA çalışır\nLD X0\nINC D0\n; LDP (yükselen kenar): yalnızca basıldığı tek taramada kapanır\nLDP X0\nINC D1\n; LDF (düşen kenar): buton bırakıldığı tek taramada kapanır ve Y1'i kurar\nLDF X0\nSET Y1\n; Y1 yandıktan 3 s sonra kendini sıfırlar\nLD Y1\nTMR T0 K30\nLD T0\nRST Y1\nEND",
+  },
+  {
+    name: "Tank: iki seviye sensörüyle pompa",
+    il: "#X0 alt seviye sensörü\n#X1 üst seviye sensörü\n#Y0 doldurma pompası\n; Dene: sensör 1 ise su o seviyede demektir. Başta ikisi de 0: pompa çalışır\n; X0'ı, sonra X1'i kilitle (tank doldu): pompa durur. X1'i bırak: pompa hâlâ durur\n; X0'ı da bırak (su alt seviyenin altına indi): pompa yeniden çalışır\n; Su alt seviyenin altındaysa pompa kurulur\nLDI X0\nSET Y0\n; Su üst seviyeye ulaşınca pompa sıfırlanır\nLD X1\nRST Y0\nEND",
   },
 ];
 

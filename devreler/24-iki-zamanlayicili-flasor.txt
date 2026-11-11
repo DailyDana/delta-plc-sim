@@ -1,0 +1,12 @@
+#X0 anahtar
+#Y0 lamba
+; Dene: X0'ı kilitle (sağ tık). Lamba 1 s sönük, 2 s yanık olarak yanıp söner
+; T0 sönük kalma süresini sayar (1 s). T1 dolunca T0 sıfırlanır ve döngü baştan başlar
+LD X0
+ANI T1
+TMR T0 K10
+; T0 dolunca lamba yanar ve T1 yanık kalma süresini sayar (2 s)
+LD T0
+OUT Y0
+TMR T1 K20
+END

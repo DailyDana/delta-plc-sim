@@ -114,6 +114,14 @@ export function HelpModal() {
       <div className="dialog wide" role="dialog" aria-modal="true" aria-labelledby="help-t">
         <h2 id="help-t">Nasıl kullanılır</h2>
         <div className="help">
+          <h3>Temel kavramlar</h3>
+          <ul>
+            <li><b>X</b> giriş (buton, sensör), <b>Y</b> çıkış (lamba, kontaktör), <b>M</b> yardımcı röle (yalnızca program içinde), <b>T</b> zamanlayıcı, <b>C</b> sayıcı, <b>D</b> sayı tutan kaydedici.</li>
+            <li><code>┤ ├</code> açık kontak: cihaz 1 iken akım geçirir. <code>┤/├</code> kapalı kontak: cihaz 0 iken geçirir. <code>( )</code> bobin: akım gelince cihazı 1 yapar.</li>
+            <li>PLC programı sürekli baştan sona okur; her okumaya <b>tarama</b> denir. Bir taramada önce girişler okunur, sonra satırlar yukarıdan aşağı çalışır, en son çıkışlar güncellenir. Bu yüzden aynı bobine yazan iki satırdan sonraki kazanır.</li>
+            <li>Komut listesinde <code>LD</code> satırı başlatır, <code>AND</code> seri, <code>OR</code> paralel bağlar; <code>LDI/ANI/ORI</code> kapalı kontaktır. <code>OUT</code> akım varken 1, yokken 0 yapar; <code>SET</code> 1 yapıp bırakır, <code>RST</code> sıfırlar.</li>
+            <li>Yeni başlıyorsan sol paneldeki <b>Örnekler</b> listesinden başla (ya da <kbd>Ctrl+K</kbd> ile ara). Her örneğin ilk satırındaki "Dene:" ne yapıp ne göreceğini söyler.</li>
+          </ul>
           <h3>Devre kurmak</h3>
           <ul>
             <li>Soldaki panodan parçayı ladder'a sürükle; mavi noktalar bırakılabilecek yerlerdir. Parçaya tıklarsan seçili öğenin yanına eklenir.</li>
@@ -128,7 +136,7 @@ export function HelpModal() {
             <li>STOP→RUN'da kalıcı olmayan bellek silinir; kalıcı (latched) bölgeler korunur. Güç düğmesi her şeyi siler.</li>
           </ul>
           <h3>Zamanlayıcılar</h3>
-          <p>Taban süre modele göre değişir (üst çubukta model seçimi). DVP-ES2'de T0–T126 ve T128–T199 100 ms, T127 1 ms, T200–T239 10 ms; T240–T255 birikimli: akım kesilince değer korunur, RST ile sıfırlanır. <code>TMR T0 K50</code> = 5 s.</p>
+          <p>Taban süre modele göre değişir (üst çubukta model seçimi). DVP-ES2'de T0–T126 ve T128–T199 100 ms, T127 1 ms, T200–T239 10 ms; T240–T255 birikimli: akım kesilince değer korunur, RST ile sıfırlanır. <code>TMR T0 K50</code> = 5 s. Normal zamanlayıcı, önündeki akım kesildiği anda sıfırlanır; süre dolunca T0 kontağı kapanır.</p>
           <h3>Veri komutları</h3>
           <ul>
             <li>D0, D1… 16 bit sayı tutar (−32768…32767). İzleme sekmesinde değerleri görünür; fonksiyon kutusunun altında canlı yazar.</li>

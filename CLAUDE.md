@@ -1,7 +1,8 @@
 # Delta PLC Simülatör — ajan rehberi
 
 Tarayıcıda çalışan Delta DVP ladder simülatörü. Yayın: https://delta-plc-sim.delidana-lab.workers.dev (Cloudflare Workers, statik).
-Yol haritası: `C:\Users\bilge\.claude\plans\program-senin-ok-rahat-sleepy-eich.md` (Aşama 0–1 bitti; Aşama 2 v2 IDE önizlemede, geçiş kullanıcı onayı bekliyor).
+Yol haritası: `C:\Users\bilge\.claude\plans\program-senin-ok-rahat-sleepy-eich.md` (Aşama 0–2 ve 3a bitti; v2 önizleme adresinde, ana adrese geçiş kullanıcı onayı bekliyor).
+Sıra (11 Kas 2026 incelemesi): doğruluk turu yapıldı → öğrenme düzeltmeleri → yalnızca MC/MCR → zaman diyagramı ve alıştırma modu → STL/CJ/SFT/DCNT (satır modeli ve akım gösterimi baştan ele alınmalı; büyük iş).
 
 ## Katmanlar
 
@@ -45,8 +46,9 @@ Model: `--model ES2|SS2|EH3|v1` (varsayılan ES2). v1 profili yalnızca eski dav
   Yeni komut eklerken: `instructions.ts` tablosu → `il.ts` işlenen denetimi → `vm.ts` `api()` → `tests/api.test.ts` (kılavuz örneğiyle).
 - MC/MCR, CJ/P, STL/RET, SFTL/SFTR, DCNT henüz yok (Aşama 3b).
 - Ladder'a çevrilemeyen ama çalışan kalıp: çıkıştan sonra OR (`L_OR_AFTER_OUTPUT`).
-- Örnekler (`src/core/examples.ts`): ilk `V1_COUNT` (19) örnek v1 `examples.js` ile birebir aynı (eşdeğerlik testi); sonrakiler v2'ye özel.
-  Yeni örnek: `devreler/NN-ad.txt` yaz → `kontrol` (ES2 ve v1) → `sim` ile yorumlardaki davranışı doğrula → listeye ekle (sırayı bozma, `#ornek=N` bağlantıları sıraya bağlı).
+- Örneklerin tek kaynağı `devreler/*.txt`. `examples.js` (v1, ilk `V1_COUNT` = 19) ve `src/core/examples.ts` (v2, hepsi) `node tools/ornekler.cjs` ile ÜRETİLİR; elle düzenleme (`tests/ornekler.test.ts` farkı yakalar).
+  Yeni örnek: `devreler/NN-ad.txt` yaz (ilk yorum `; Dene: …`) → `kontrol` → `sim` ile yorumdaki davranışı doğrula → `tools/ornekler.cjs` listesinin SONUNA ekle (sıra değişirse `#ornek=N` bağlantıları kayar) → `npm run ornekler`.
+- Kaskad çıkış (`OUT A / AND b / OUT C / OUT D`): `ilToLadder` kontağı bobinlere kopyalamaz, ara düğümün ön serisi yapar (kontak bir kez okunur). Bunu bozan değişiklik `tests/kaskad.test.ts`'te yakalanır.
 
 ## Tarayıcıda sürmek: `window.plc` (v2) / `PLC.app` (v1)
 

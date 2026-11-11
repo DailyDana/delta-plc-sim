@@ -33,6 +33,8 @@ export type DiagCode =
   | 'E_NO_OUTPUT'
   | 'W_DOUBLE_COIL'
   | 'W_COUNTER_32'
+  | 'W_AFTER_END'
+  | 'W_NO_END'
   | 'L_OR_AFTER_OUTPUT'
   | 'L_UNSUPPORTED';
 
@@ -45,3 +47,22 @@ export const diag = (code: DiagCode, message: string, at: Partial<Pick<Diagnosti
 });
 
 export const hasErrors = (ds: readonly Diagnostic[]): boolean => ds.some((d) => d.severity === 'error');
+
+/**
+ * IL tanılamalarına ladder dönüşümünün (L_) tanılamalarını ekler. Aynı satırda zaten bir hata varsa
+ * oradaki L_ uyarısı aynı sorunun ikinci kez söylenişidir (ör. açık blok: E_OPEN_BLOCK + L_UNSUPPORTED); atılır.
+ * Sonuç satır sırasıyla döner; özet sayıları bu listeden sayılmalıdır.
+ */
+export function mergeDiagnostics(base: readonly Diagnostic[], ladder: readonly Diagnostic[]): Diagnostic[] {
+  const errLines = new Set(base.filter((d) => d.severity === 'error').map((d) => d.line));
+  const seen = new Set(base.map((d) => `${d.line}|${d.code}|${d.message}`));
+  const out = [...base];
+  for (const d of ladder) {
+    if (d.code.startsWith('L_') && errLines.has(d.line)) continue;
+    const key = `${d.line}|${d.code}|${d.message}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(d);
+  }
+  return out.sort((a, b) => (a.line ?? 0) - (b.line ?? 0));
+}

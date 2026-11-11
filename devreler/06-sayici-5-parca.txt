@@ -1,6 +1,7 @@
 #X0 sensör
 #X1 reset
 #Y0 kutu dolu
+; Dene: X0'a 5 kez bas; beşincide Y0 yanar. X1 sayıcıyı sıfırlar
 ; Her X0 basışında C0 bir artar; 5 olunca Y0 yanar
 LD X0
 CNT C0 K5

@@ -11,7 +11,9 @@ import {
   drawLadderText,
   getProfile,
   ilToLadder,
+  isBlocking,
   ladderToIl,
+  mergeDiagnostics,
   parseEvents,
   shareLink,
   simulate,
@@ -86,13 +88,16 @@ function cmdKontrol(a: Args, profileId: string | undefined): number {
   const profile = getProfile(profileId);
   const r = checkIl(text, profile);
   const conv = ilToLadder(r.program);
-  const errs = r.diagnostics.filter((d) => d.severity === 'error');
-  const warns = r.diagnostics.filter((d) => d.severity === 'warning');
+  // Tek liste: aynı satırdaki aynı sorun (ör. E_OPEN_BLOCK + L_UNSUPPORTED) bir kez; özet bu listeden sayılır
+  const all = mergeDiagnostics(r.diagnostics, conv.diagnostics.filter((d) => d.code.startsWith('L_')));
+  const errs = all.filter((d) => d.severity === 'error');
+  const warns = all.filter((d) => d.severity === 'warning');
+  const blocked = all.some((d) => isBlocking(d, profile));
   console.log(`${name}: ${r.rungs.length} satır, ${r.program.instrs.length} komut  (model: ${profile.id})`);
-  if (!r.diagnostics.length) console.log('  ✓ hata yok');
-  r.diagnostics.forEach((d) => console.log(fmtDiag(d)));
-  conv.diagnostics.filter((d) => d.code.startsWith('L_')).forEach((d) => console.log(fmtDiag(d)));
-  if (!conv.ladder) console.log('  (ladder\'a çevrilemiyor; program IL olarak çalışır)');
+  if (!all.length) console.log('  ✓ hata yok');
+  all.forEach((d) => console.log(fmtDiag(d)));
+  if (blocked) console.log('  (program bu hatalarla çalıştırılmaz)');
+  else if (!conv.ladder) console.log('  (ladder\'a çevrilemiyor; program IL olarak çalışır)');
   if (a.opt.il) {
     console.log('\n' + (conv.ladder ? ladderToIl(conv.ladder) : writeIl(r.program)));
   }
@@ -157,11 +162,8 @@ function cmdCiz(a: Args, profileId: string | undefined): number {
   const { text } = readSource(a);
   const r = checkIl(text, getProfile(profileId));
   const conv = ilToLadder(r.program);
-  r.diagnostics.forEach((d) => console.log(fmtDiag(d)));
-  if (!conv.ladder) {
-    conv.diagnostics.forEach((d) => console.log(fmtDiag(d)));
-    return 1;
-  }
+  mergeDiagnostics(r.diagnostics, conv.ladder ? [] : conv.diagnostics).forEach((d) => console.log(fmtDiag(d)));
+  if (!conv.ladder) return 1;
   console.log(drawLadderText(conv.ladder));
   return r.diagnostics.some((d) => d.severity === 'error') ? 1 : 0;
 }

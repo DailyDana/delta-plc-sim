@@ -12,6 +12,7 @@ import {
   ilToLadder,
   ladderToIl,
   mapProgramToLadder,
+  mergeDiagnostics,
   parseIl,
   type Diagnostic,
   type IlProgram,
@@ -79,7 +80,7 @@ export function deriveDoc(il: string, model: string, keep?: Ladder | null): Doc 
   const profile = getProfile(model);
   const parsed = parseIl(il, profile);
   const an = analyze(parsed.program);
-  const diagnostics = [...parsed.diagnostics, ...an.diagnostics];
+  let diagnostics = [...parsed.diagnostics, ...an.diagnostics];
   let ladder: Ladder | null = keep ?? null;
   let fromIl: Map<string, number> | null = null;
   let ladderError: string | null = null;
@@ -87,7 +88,8 @@ export function deriveDoc(il: string, model: string, keep?: Ladder | null): Doc 
     if (diagnostics.some((d) => STRUCTURAL.has(d.code))) ladderError = 'IL\'de yapı hatası var; ladder görünümü için önce Sorunlar\'daki hataları düzelt.';
     else {
       const conv = ilToLadder(parsed.program);
-      diagnostics.push(...conv.diagnostics);
+      // aynı satırdaki aynı sorun (IL hatası + ladder uyarısı) Sorunlar'da bir kez görünsün
+      diagnostics = mergeDiagnostics(diagnostics, conv.diagnostics);
       ladder = conv.ladder;
       fromIl = conv.instrOf;
       if (!ladder) ladderError = conv.diagnostics[0]?.message ?? 'Bu IL ladder olarak gösterilemiyor.';
@@ -166,7 +168,7 @@ function initial() {
   let tabs = loaded.tabs?.tabs ?? [];
   let active = loaded.tabs?.active ?? 0;
   if (!tabs.length) {
-    const ex = EXAMPLES[0]!;
+    const ex = EXAMPLES[1]!; // ilk açılış: mühürleme (start-stop), en sade tam devre
     tabs = [{ id: newId(), name: ex.name, il: ex.il, base: ex.il, savedAs: null }];
     active = 0;
   }

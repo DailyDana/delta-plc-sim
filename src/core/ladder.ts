@@ -230,19 +230,6 @@ function coilOf(it: IlProgram['instrs'][number]): Coil {
 /** ilToLadder sırasında: ladder öğe id'si → onu üreten komutun sırası */
 let srcOf: Map<string, number> | null = null;
 
-/** Kopyalarken kaynak eşlemesini de taşı (çıkış dallarının ön serileri kopyalanır) */
-function cloneTracked(s: Series): Series {
-  return s.map((b) => {
-    if (b.t === 'c') {
-      const n = { ...b, id: nid() };
-      const src = srcOf?.get(b.id);
-      if (src !== undefined) srcOf!.set(n.id, src);
-      return n;
-    }
-    return parallel(b.branches.map(cloneTracked));
-  });
-}
-
 function normalize(list: OutBranch[]): OutBranch[] {
   const out: OutBranch[] = [];
   for (const b of list) {
@@ -370,9 +357,18 @@ export function ilToLadder(program: IlProgram): { ladder: Ladder | null; diagnos
             fail(it.line, `${it.mn} öncesi açık blok var`);
             break;
           }
-          const br = coilBranch(cloneTracked(stack[0]!), coilOf(it));
+          // Kaskad çıkış: son çıkıştan beri biriken kontaklar IL'de bir kez okunur ve bundan sonraki
+          // bütün çıkışlar o sonucu paylaşır. Bu yüzden kontaklar bobine kopyalanmaz; bir ara düğümün
+          // ön serisi olur ve sonraki çıkışlar o düğümün altına eklenir (MRD/MPP düğümden çıkarır).
+          const pre = stack[0]!;
+          const br = coilBranch([], coilOf(it));
           map.set(br.id, i);
-          active.push(br);
+          if (pre.length) {
+            const node: OutBranch = { id: nid(), pre, children: [br] };
+            active.push(node);
+            active = node.children!;
+            stack = [[]];
+          } else active.push(br);
           break;
         }
         default:

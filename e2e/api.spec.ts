@@ -96,14 +96,14 @@ test.describe('window.plc API', () => {
     expect(errs.list).toEqual([]);
   });
 
-  test('yıldız-üçgen: press sonrası yıldız, advance(5000) sonrası üçgen', async ({ page }) => {
+  test('yıldız-üçgen: press sonrası yıldız, advance(5600) sonrası üçgen', async ({ page }) => {
     const errs = collectErrors(page);
     await openClean(page);
     await loadOnly(page, ex('Yıldız'), 'yu');
     const r = await page.evaluate(() => {
       window.plc.stop();
       const a = window.plc.press('X0', 50);
-      const b = window.plc.advance(5000);
+      const b = window.plc.advance(5600);
       return { a, b };
     });
     expect([r.a.Y0, r.a.Y1, r.a.Y2]).toEqual([1, 1, 0]);

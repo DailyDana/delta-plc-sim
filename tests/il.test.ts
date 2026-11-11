@@ -34,11 +34,11 @@ describe('ayrıştırıcı tanılamaları', () => {
     expect(codes('LD X0 X1\nOUT Y0')).toContain('E_OPERAND_EXTRA');
     expect(codes('LD X0\nFOO Y0')).toContain('E_UNKNOWN_OP');
     expect(codes('LD M5000\nOUT Y0')).toContain('E_ADDR_RANGE');
-    expect(codes('LD X0\nOUT Y0\nLD D5000\nOUT Y1', 'SS2')).toEqual(['E_OPERAND_KIND']); // D kontak olamaz
+    expect(codes('LD X0\nOUT Y0\nLD D5000\nOUT Y1\nEND', 'SS2')).toEqual(['E_OPERAND_KIND']); // D kontak olamaz
   });
   it('K sınırı modele göre (v1: K1+, ES2: K0+)', () => {
     expect(codes('LD X0\nTMR T0 K0', 'v1')).toContain('E_CONST_RANGE');
-    expect(codes('LD X0\nTMR T0 K0', 'ES2')).toEqual([]);
+    expect(codes('LD X0\nTMR T0 K0\nEND', 'ES2')).toEqual([]);
     expect(codes('LD X0\nTMR T0 K40000')).toContain('E_CONST_RANGE');
     const p = parseIl('LD X0\nTMR T0 50').program; // v1 uyumu: çıplak sayı K sayılır
     expect(p.instrs[1]?.ops[1]?.k).toBe(50);
@@ -54,8 +54,8 @@ describe('ayrıştırıcı tanılamaları', () => {
     expect(codes(deep)).toContain('E_MPS_DEPTH');
   });
   it('çift bobin uyarısı', () => {
-    expect(codes('LD X0\nOUT Y0\nLD X1\nOUT Y0')).toEqual(['W_DOUBLE_COIL']);
-    expect(codes('LD X0\nSET Y0\nLD X1\nRST Y0')).toEqual([]);
+    expect(codes('LD X0\nOUT Y0\nLD X1\nOUT Y0\nEND')).toEqual(['W_DOUBLE_COIL']);
+    expect(codes('LD X0\nSET Y0\nLD X1\nRST Y0\nEND')).toEqual([]);
   });
   it('satırlara bölme ve açıklamalar', () => {
     const r = checkIl('; birinci\nLD X0\nOUT Y0\nAND X1\nOUT Y1\n; ikinci\nLD X2\nOUT Y2');

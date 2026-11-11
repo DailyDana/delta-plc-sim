@@ -64,6 +64,11 @@ function Status() {
       <span className="scaninfo" id="scaninfo">
         {m ? `tarama ${m.scanCount} · ${(m.timeMs / 1000).toFixed(1)} s` : 'program çalıştırılamıyor'}
       </span>
+      {m && engine.stale && (
+        <span className="storewarn" id="stalewarn" role="status" title="Düzenleyicideki program hatalı (Sorunlar paneline bak). PLC, son hatasız sürümü çalıştırmaya devam ediyor; hata düzelince yeni sürüme bellek korunarak geçilir.">
+          <TriangleAlert size={15} /> {mode === 'stop' ? 'Program hatalı; RUN son geçerli sürümü çalıştırır' : 'Program hatalı, son geçerli sürüm çalışıyor'}
+        </span>
+      )}
     </>
   );
 }

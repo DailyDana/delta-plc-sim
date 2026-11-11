@@ -1,6 +1,7 @@
 #X0 start
 #X1 stop
 #Y0 motor
+; Dene: X0 motoru çalıştırır, X1 durdurur. İkisine birlikte basarsan motor durur (RST sonra yazıldı)
 ; Start motoru kurar
 LD X0
 SET Y0

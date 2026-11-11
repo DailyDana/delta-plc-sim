@@ -5,6 +5,8 @@
       name: 'Tahtadaki devre (fotoğraf)',
       il: `#X0 start
 #X1 stop
+; Dene: bir şeye basma; Y0 yanık başlar, 15 s sonra Y1 yanar. X0'a bas: Y0 ve Y1 söner.
+; X1'i 10 s basılı tut: Y2 yanar. (Tahtadan olduğu gibi alındı; fotoğraf kesik olduğu için devre yarım)
 ; Start'a basınca M0 kurulur (SET)
 LD X0
 SET M0
@@ -36,6 +38,7 @@ END`,
       il: `#X0 start
 #X1 stop
 #Y0 motor
+; Dene: X0'a kısa bas; motor çalışır ve bırakınca da çalışmaya devam eder. X1 durdurur
 ; Klasik mühürleme: Y0 kendi kontağıyla kendini tutar, stop (kapalı kontak) bırakır
 LD X0
 OR Y0
@@ -48,6 +51,7 @@ END`,
       il: `#X0 start
 #X1 stop
 #Y0 motor
+; Dene: X0 motoru çalıştırır, X1 durdurur. İkisine birlikte basarsan motor durur (RST sonra yazıldı)
 ; Start motoru kurar
 LD X0
 SET Y0
@@ -63,22 +67,27 @@ END`,
 #Y0 ana kontaktör
 #Y1 yıldız
 #Y2 üçgen
+; Dene: X0'a bas. Ana ve yıldız çeker; 5 s sonra yıldız bırakır, 0,5 s boşluktan sonra üçgen çeker. X1 durdurur
 ; Çalışma rölesi M0 (mühürlemeli)
 LD X0
 OR M0
 ANI X1
 OUT M0
-; M0 açıkken: Y0 ana, T0 5 s, önce yıldız sonra üçgen
+; M0 açıkken: Y0 ana; T0 5 s yıldız süresi, T1 5,5 s (0,5 s geçiş boşluğu); Y1 ve Y2 birbirinin kapalı kontağıyla kilitli
 LD M0
 MPS
 OUT Y0
 MRD
 TMR T0 K50
 MRD
+TMR T1 K55
+MRD
 ANI T0
+ANI Y2
 OUT Y1
 MPP
-AND T0
+AND T1
+ANI Y1
 OUT Y2
 END`,
     },
@@ -87,6 +96,7 @@ END`,
       il: `#Y0 kırmızı
 #Y1 sarı
 #Y2 yeşil
+; Dene: yalnızca RUN'a bas ve izle, giriş gerekmez
 ; T0 kırmızı 5 s, T1 sarı 2 s, T2 yeşil 5 s; T2 dolunca hepsi sıfırlanıp döngü başa döner
 LDI T2
 TMR T0 K50
@@ -108,6 +118,7 @@ END`,
       il: `#X0 sensör
 #X1 reset
 #Y0 kutu dolu
+; Dene: X0'a 5 kez bas; beşincide Y0 yanar. X1 sayıcıyı sıfırlar
 ; Her X0 basışında C0 bir artar; 5 olunca Y0 yanar
 LD X0
 CNT C0 K5
@@ -122,6 +133,7 @@ END`,
       name: 'Tek butonla aç/kapa (PLS)',
       il: `#X0 buton
 #Y0 lamba
+; Dene: X0'a her basışta lamba durum değiştirir; basılı tutmak bir şey değiştirmez
 ; X0'ın yükselen kenarında M0 tek tarama 1 olur
 LD X0
 PLS M0
@@ -138,6 +150,7 @@ END`,
       name: 'Flaşör (M1013 1 s saat)',
       il: `#X0 anahtar
 #Y0 flaşör
+; Dene: X0'ı kilitle (sağ tık); lamba saniyede bir yanıp söner
 ; M1013 özel rölesi 0,5 s açık / 0,5 s kapalı çakar
 LD X0
 AND M1013

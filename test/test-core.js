@@ -32,7 +32,8 @@ function run(prog, sim, ms, inputs) {
 { const p = get('Yıldız'), s = new P.Sim();
   run(p, s, 50, { X0: true }); run(p, s, 50, { X0: false });
   ok(s.bits.Y0 && s.bits.Y1 && !s.bits.Y2, 'yu: önce yıldız');
-  run(p, s, 5000); ok(s.bits.Y0 && !s.bits.Y1 && s.bits.Y2, 'yu: 5 s sonra üçgen ' + JSON.stringify(s.bits)); }
+  run(p, s, 5000); ok(s.bits.Y0 && !s.bits.Y1 && !s.bits.Y2, 'yu: 5 s sonra yıldız bıraktı, geçiş boşluğu ' + JSON.stringify(s.bits));
+  run(p, s, 600); ok(s.bits.Y0 && !s.bits.Y1 && s.bits.Y2, 'yu: 5,5 s sonra üçgen ' + JSON.stringify(s.bits)); }
 
 // 4) Trafik: 0-5 kırmızı, 5-7 sarı, 7-12 yeşil, sonra kırmızı
 { const p = get('Trafik'), s = new P.Sim();

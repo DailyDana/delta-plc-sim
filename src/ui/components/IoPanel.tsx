@@ -1,4 +1,5 @@
 // G/Ç paneli: PLC gövdesi gibi. Üstte X girişleri (bas-bırak butonlar, ışıklı), altta Y çıkış lambaları.
+import { formatAddress, getProfile, instrDevices } from '../../core';
 import { useStore } from '../state/store';
 import { engine } from '../sim/engine';
 import { useLive } from '../sim/useLive';
@@ -23,8 +24,11 @@ export function IoPanel() {
   const labels = useStore((s) => s.doc.program.labels);
   const xMode = useStore((s) => s.settings.xMode);
   const used = useStore((s) => s.doc.program.instrs);
+  const model = useStore((s) => s.settings.model);
+  // Komutun dokunduğu bütün cihazlar (K1Y0 → Y0–Y3, CMP sonucu D…D+2, ZRST aralığı): çekirdekle aynı kaynak
+  const profile = getProfile(model);
   const usedSet = new Set<string>();
-  for (const it of used) for (const o of it.ops) if (o.addr) usedSet.add(o.addr.text);
+  for (const it of used) for (const a of instrDevices(it, profile)) usedSet.add(formatAddress(a.type, a.index));
   const live = engine.live;
   const out = engine.machine?.outputs;
 

@@ -12,6 +12,7 @@
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
     "plc": "tsx src/cli/plc.ts",
+    "ornekler": "node tools/ornekler.cjs",
     "e2e": "vite build && playwright test",
     "test:all": "npm run typecheck && vitest run && npm run e2e && node tools/test.js"
   },

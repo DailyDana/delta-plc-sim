@@ -1,0 +1,18 @@
+#X0 buton
+#Y1 bırakınca yanan lamba
+; Dene: X0'ı 1 s basılı tut ve bırak. D0 yüz kadar artar, D1 yalnızca 1 artar; bırakınca Y1 3 s yanar
+; Kenarsız: X0 basılı olduğu sürece HER TARAMADA çalışır
+LD X0
+INC D0
+; LDP (yükselen kenar): yalnızca basıldığı tek taramada kapanır
+LDP X0
+INC D1
+; LDF (düşen kenar): buton bırakıldığı tek taramada kapanır ve Y1'i kurar
+LDF X0
+SET Y1
+; Y1 yandıktan 3 s sonra kendini sıfırlar
+LD Y1
+TMR T0 K30
+LD T0
+RST Y1
+END

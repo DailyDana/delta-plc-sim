@@ -22,6 +22,11 @@ export interface LoadResult {
 
 class Engine {
   machine: Machine | null = null;
+  /**
+   * Düzenleyicideki program şu an hatalı, motor son geçerli sürümü çalıştırıyor. Bu durumda `machine`
+   * düzenleyicideki programa ait değildir: komut sırasıyla eşlenen canlı izler (closed/accOut) kullanılmamalı.
+   */
+  stale = false;
   mode: Mode = 'stop';
   speed = 1;
   /** Dış girişler (X sıra numarasına göre) */
@@ -44,19 +49,28 @@ class Engine {
     if (opts.fresh) {
       // Başka devre (sekme değişimi, yeni yükleme): sıfırdan, STOP'ta başla
       this.machine = null;
+      this.stale = false;
       this.mode = 'stop';
       this.clearPulses();
       this.il = '';
     }
-    if (il === this.il && profileId === this.profileId && this.machine) return { ok: true, diagnostics: [] };
+    if (il === this.il && profileId === this.profileId && this.machine && !this.stale) return { ok: true, diagnostics: [] };
     const { machine, diagnostics } = Machine.fromText(il, { profile: profileId });
     const old = this.machine;
     const sameProfile = profileId === this.profileId;
     this.il = il;
     this.profileId = profileId;
     if (!machine) {
-      // Yapı bozuk: çalıştırılamaz. Çalışıyorsa durdur.
+      if (old && sameProfile) {
+        // Yazarken geçici bozuk ara durum (ör. satır sonunda yalnızca "LD"): son geçerli programla devam,
+        // bellek korunur. Program düzelince adoptState ile yeni programa geçilir.
+        this.stale = true;
+        this.touch();
+        return { ok: false, diagnostics };
+      }
+      // Hiç geçerli program yok: çalıştırılamaz. Çalışıyorsa durdur.
       this.machine = null;
+      this.stale = false;
       if (this.mode !== 'stop') this.mode = 'stop';
       this.touch();
       return { ok: false, diagnostics };
@@ -64,6 +78,7 @@ class Engine {
     // Aynı devrenin düzenlenmesi: bellek devralınır (STOP'ta da kalıcı bölgeler kaybolmasın)
     if (old && sameProfile) machine.adoptState(old);
     this.machine = machine;
+    this.stale = false;
     this.touch();
     return { ok: true, diagnostics };
   }

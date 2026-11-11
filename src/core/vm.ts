@@ -5,14 +5,24 @@
 import { formatAddress, parseAddress, type DevType, type WordRef } from './devices';
 import type { Diagnostic } from './diagnostics';
 import type { CmpOp, ContactKind, InstrDef, OpClass } from './instructions';
-import { analyze, parseIl, type IlProgram, type RungSpan } from './il';
-import { getProfile, isLatched, timerRange, type Profile } from './profiles';
+import { analyze, instrDevices, parseIl, type IlProgram, type RungSpan } from './il';
+import { counterRange, getProfile, isLatched, timerRange, type Profile } from './profiles';
 
 /** power: güç açılışı (her şey silinir) · run: STOP→RUN (kalıcı bölgeler ve birikimli zamanlayıcılar korunur) */
 export type ResetMode = 'power' | 'run';
 
 /** Bu tanılamalardan biri varsa program çalıştırılmaz (yapı bozuk ya da komut düşmüş) */
-const BLOCKING = new Set(['E_UNKNOWN_OP', 'E_OPERAND_MISSING', 'E_NEED_LOAD', 'E_OPEN_BLOCK', 'E_BLOCK_UNDERFLOW', 'E_MPS_UNDERFLOW', 'E_MPS_DEPTH']);
+const STRUCTURE_BLOCKING = ['E_UNKNOWN_OP', 'E_OPERAND_MISSING', 'E_NEED_LOAD', 'E_OPEN_BLOCK', 'E_BLOCK_UNDERFLOW', 'E_MPS_UNDERFLOW', 'E_MPS_DEPTH'];
+/**
+ * İşlenen aralığı/adres hataları da engeller: aksi hâlde geçersiz işlenen sessizce 0 sayılır
+ * (ör. TMR T0 K40000 → K0 gibi davranır, çıkış ilk taramada ON). v1 profili eski davranışı korur (eşdeğerlik testi).
+ */
+const OPERAND_BLOCKING = ['E_ADDR_FORMAT', 'E_ADDR_OCTAL', 'E_ADDR_RANGE', 'E_OPERAND_KIND', 'E_SPECIAL_READONLY', 'E_CONST_RANGE'];
+const BLOCKING = new Set([...STRUCTURE_BLOCKING, ...OPERAND_BLOCKING]);
+const BLOCKING_V1 = new Set(STRUCTURE_BLOCKING);
+
+/** Bu tanılama programın çalışmasını engeller mi (profile göre) */
+export const isBlocking = (d: Diagnostic, profile: Profile): boolean => (profile.id === 'v1' ? BLOCKING_V1 : BLOCKING).has(d.code);
 
 interface Code {
   cls: OpClass;
@@ -81,8 +91,14 @@ export class Machine {
   timeMs = 0;
   /** Komut izi (accIn/accOut/closed) en az bir taramayla dolduruldu mu? (yeni kurulan makinede false) */
   traced = false;
-  /** adoptState sonrası ilk tarama: bobin kenar belleği doldurulur, darbe/sayma üretilmez */
+  /**
+   * adoptState sonrası ilk tarama: eski programda karşılığı bulunmayan (yeni ya da değişmiş) komutların
+   * bobin kenar belleği doldurulur, darbe/sayma üretilmez. Değişmeyen komutlar eski belleği devralır.
+   */
+  private prime: Uint8Array;
   private priming = false;
+  /** Son taramanın süresi (ms); saat darbeleri için */
+  private scanDt = 0;
 
   private readonly bstack: Uint8Array;
   private readonly mstack: Uint8Array;
@@ -132,6 +148,7 @@ export class Machine {
     for (const r of rungs) if (r.start < n) this.rungStart[r.start] = 1;
     this.edge = new Int8Array(n).fill(this.profile.risingOnStartup ? 0 : -1);
     this.coilPrev = new Uint8Array(n);
+    this.prime = new Uint8Array(n);
     this.accIn = new Uint8Array(n);
     this.accOut = new Uint8Array(n);
     this.closed = new Uint8Array(n);
@@ -150,7 +167,7 @@ export class Machine {
     const parsed = parseIl(text, profile);
     const an = analyze(parsed.program);
     const diagnostics = [...parsed.diagnostics, ...an.diagnostics].sort((a, b) => (a.line ?? 0) - (b.line ?? 0));
-    const blocked = diagnostics.some((d) => BLOCKING.has(d.code));
+    const blocked = diagnostics.some((d) => isBlocking(d, profile));
     const machine = blocked ? null : new Machine(parsed.program, an.rungs, { profile });
     return { machine, diagnostics, program: parsed.program, rungs: an.rungs };
   }
@@ -185,7 +202,8 @@ export class Machine {
 
   /**
    * Çalışırken program değişti: eski makinenin cihaz belleğini ve zamanını devral (çevrimiçi düzenleme).
-   * Komut başına kenar belleği yeni programla sıfırdan başlar; ayar değerlerini yeni program belirler.
+   * Değişmeyen komutlar kenar belleğini eski programdan devralır, yeni/değişmiş komutlar sahte kenar üretmeyecek
+   * biçimde başlar (aşağıda); ayar değerlerini yeni program belirler.
    */
   adoptState(old: Machine): void {
     const copy = (dst: { length: number; [i: number]: number }, src: { length: number; [i: number]: number }) => {
@@ -206,10 +224,22 @@ export class Machine {
     copy(this.Ccv, old.Ccv);
     this.scanCount = old.scanCount;
     this.timeMs = old.timeMs;
-    // Kenar belleği: devralınan durumda "önceki = şimdiki" say ki düzenleme sahte kenar üretmesin;
-    // CNT/PLS/PLF de ilk taramada bobinin önceki durumunu şimdiki kabul eder (priming)
+    this.scanDt = old.scanDt;
+    // Komut başına kenar belleği:
+    // - Değişmeyen komut (aynı satırda kendisi ve kendinden önceki komutlar aynı) eski komutun belleğini devralır;
+    //   böylece düzenlemeden hemen sonraki taramadaki gerçek kenar yutulmaz (CNT, PLS/PLF, P'li komutlar, LDP/LDF).
+    // - Yeni ya da değişmiş komut: kontakta "önceki = şimdiki", bobinde ilk taramada "önceki = şimdiki akım"
+    //   (priming); düzenleme anında zaten ON olan koşul sahte kenar üretmez.
+    const match = matchInstrs(old, this);
+    this.prime.fill(0);
     this.code.forEach((c, i) => {
-      if (c.cls === 'load' || c.cls === 'and' || c.cls === 'or') this.edge[i] = c.type !== null && this.read(c.type, c.index) ? 1 : 0;
+      const j = match[i]!;
+      if (j >= 0) {
+        this.edge[i] = old.edge[j]!;
+        this.coilPrev[i] = old.coilPrev[j]!;
+      } else if (c.cls === 'load' || c.cls === 'and' || c.cls === 'or') {
+        this.edge[i] = c.type !== null && this.read(c.type, c.index) ? 1 : 0;
+      } else this.prime[i] = 1;
     });
     this.priming = true;
   }
@@ -233,18 +263,28 @@ export class Machine {
   }
 
   private special(index: number): boolean | null {
-    const t = this.timeMs;
     switch (index) {
       case 1000: return true;
       case 1001: return false;
       case 1002: return this.scanCount === 0;
       case 1003: return this.scanCount !== 0;
-      case 1011: return Math.floor(t / 5) % 2 === 1; // 10 ms saat
-      case 1012: return Math.floor(t / 50) % 2 === 1; // 100 ms saat
-      case 1013: return Math.floor(t / 500) % 2 === 1; // 1 s saat
-      case 1014: return Math.floor(t / 30000) % 2 === 1; // 1 dk saat
+      case 1011: return this.clock(5); // 10 ms saat (5 ms açık / 5 ms kapalı, s.2-12)
+      case 1012: return this.clock(50); // 100 ms saat
+      case 1013: return this.clock(500); // 1 s saat
+      case 1014: return this.clock(30000); // 1 dk saat
       default: return null;
     }
+  }
+
+  /**
+   * Saat darbesi (yarım periyot ms). Gerçek PLC'de saat taramadan bağımsız akar (s.2-47). Tarama süresi yarım
+   * periyoda eşit ya da büyükse taramanın başındaki zamana bakmak biti hep aynı fazda yakalar (10 ms taramada
+   * M1011 hep OFF); bu durumda simülatör biti her taramada bir kez değiştirir (simülatör yaklaşımı: gerçek
+   * donanımda göze "titreyen" bit). v1 profili eski davranışı korur.
+   */
+  private clock(half: number): boolean {
+    if (this.scanDt >= half && this.profile.id !== 'v1') return this.scanCount % 2 === 1;
+    return Math.floor(this.timeMs / half) % 2 === 1;
   }
 
   private write(type: DevType | null, index: number, v: boolean): void {
@@ -273,6 +313,7 @@ export class Machine {
 
   /** Bir tarama; dt = bu taramanın simüle edilen süresi (ms) */
   scan(dt: number): void {
+    this.scanDt = dt;
     this.X.set(this.inputs);
     const code = this.code;
     const bs = this.bstack;
@@ -397,7 +438,7 @@ export class Machine {
         const k0 = c.kD >= 0 ? (this.D[c.kD] ?? 0) : c.k;
         const k = k0 < 1 ? 1 : k0; // K0, K1 ile aynıdır (Delta EH3/SV2 kılavuzu s.2-19)
         this.Csv[idx] = k;
-        const prev = this.priming ? (q ? 1 : 0) : this.coilPrev[i]!;
+        const prev = this.priming && this.prime[i] ? (q ? 1 : 0) : this.coilPrev[i]!;
         this.coilPrev[i] = q ? 1 : 0;
         // Ayar değerinde durur; MOV ile ayarın üstü yazılmışsa sonraki kenarda ayara eşitlenir (ES2 s.2-26)
         if (q && !prev) {
@@ -408,13 +449,13 @@ export class Machine {
         break;
       }
       case 'PLS': {
-        const prev = this.priming ? (q ? 1 : 0) : this.coilPrev[i]!;
+        const prev = this.priming && this.prime[i] ? (q ? 1 : 0) : this.coilPrev[i]!;
         this.coilPrev[i] = q ? 1 : 0;
         this.write(c.type, idx, q && !prev);
         break;
       }
       case 'PLF': {
-        const prev = this.priming ? (q ? 1 : 0) : this.coilPrev[i]!;
+        const prev = this.priming && this.prime[i] ? (q ? 1 : 0) : this.coilPrev[i]!;
         this.coilPrev[i] = q ? 1 : 0;
         this.write(c.type, idx, !q && prev === 1);
         break;
@@ -432,10 +473,14 @@ export class Machine {
     switch (r.k) {
       case 'const':
         return r.v;
-      case 'dev':
-        if (r.type === 'D') return d32 ? ((this.D[r.index + 1] ?? 0) << 16) | ((this.D[r.index] ?? 0) & 0xffff) : this.D[r.index] ?? 0;
-        if (r.type === 'T') return this.Tcv[r.index] ?? 0;
-        return this.Ccv[r.index] ?? 0;
+      case 'dev': {
+        const i = r.index;
+        if (r.type === 'D') return d32 ? ((this.D[i + 1] ?? 0) << 16) | ((this.D[i] ?? 0) & 0xffff) : this.D[i] ?? 0;
+        // T ve 16 bit C: 32 bit komutta Tn+1/Cn+1 yüksek kelime (s.3-17); 32 bit sayıcı tek başına 32 bit
+        const arr = r.type === 'T' ? this.Tcv : this.Ccv;
+        if (!d32 || this.is32(r.type, i)) return arr[i] ?? 0;
+        return ((arr[i + 1] ?? 0) << 16) | ((arr[i] ?? 0) & 0xffff);
+      }
       case 'kn': {
         const bits = r.n * 4;
         let v = 0;
@@ -459,17 +504,40 @@ export class Machine {
           this.D[i] = v & 0xffff;
           if (d32 && i + 1 < this.D.length) this.D[i + 1] = (v >> 16) & 0xffff;
         } else if (r.type === 'T') {
-          if (i >= this.Tcv.length) return;
-          const cv = d32 ? v | 0 : (v << 16) >> 16;
-          this.Tcv[i] = cv;
-          this.Tacc[i] = cv * this.timerBase(i);
-        } else if (i < this.Ccv.length) this.Ccv[i] = d32 ? v | 0 : (v << 16) >> 16;
+          // T 16 bittir: 32 bit değer Tn (düşük) ve Tn+1 (yüksek kelime) çiftine yazılır (s.3-17)
+          this.setTimer(i, (v << 16) >> 16);
+          if (d32) this.setTimer(i + 1, v >> 16);
+        } else if (i < this.Ccv.length) {
+          if (this.is32('C', i)) this.Ccv[i] = v | 0;
+          else {
+            // 16 bit sayıcı (C0–C199): 32 bitte Cn düşük, Cn+1 yüksek kelime (s.3-17)
+            this.Ccv[i] = (v << 16) >> 16;
+            if (d32 && i + 1 < this.Ccv.length) this.Ccv[i + 1] = v >> 16;
+          }
+        }
         return;
       }
       case 'kn':
         for (let b = 0; b < r.n * 4; b++) this.write(r.type, r.index + b, ((v >>> b) & 1) === 1);
         return;
     }
+  }
+
+  private setTimer(i: number, cv: number): void {
+    if (i >= this.Tcv.length) return;
+    this.Tcv[i] = cv;
+    this.Tacc[i] = cv * this.timerBase(i);
+  }
+
+  /** 32 bit sayıcı mı (C200+); T ve D her zaman 16 bit kelimedir */
+  private is32(type: 'D' | 'T' | 'C', index: number): boolean {
+    return type === 'C' && counterRange(this.profile, index)?.bits === 32;
+  }
+
+  /** Kelime işleneninden n16 kelime sonraki cihaz (32 bit sayıcıda 2 kelime = 1 cihaz); Kn ve sabitte null */
+  private shifted(r: WordRef, n16: number): WordRef | null {
+    if (r.k !== 'dev') return null;
+    return { k: 'dev', type: r.type, index: r.index + (this.is32(r.type, r.index) ? n16 / 2 : n16) };
   }
 
   /** ADD/SUB bayrakları: M1020 sıfır, M1021 borç, M1022 elde (s.3-74) */
@@ -482,7 +550,7 @@ export class Machine {
   /** Uygulama komutu (MOV, CMP, ADD…). P biçimi yalnızca akımın yükselen kenarında bir kez çalışır (s.3-17). */
   private api(i: number, c: Code, q: boolean): void {
     const def = c.def;
-    const prev = this.priming ? (q ? 1 : 0) : this.coilPrev[i]!;
+    const prev = this.priming && this.prime[i] ? (q ? 1 : 0) : this.coilPrev[i]!;
     this.coilPrev[i] = q ? 1 : 0;
     if (!q || (def.pulse && prev)) return; // yürütülmezse hedefler ve bayraklar korunur (s.3-18, 3-61)
     const d32 = !!def.d32;
@@ -528,9 +596,10 @@ export class Machine {
           this.writeW(dst, prod | 0, true);
           this.M[1020] = prod === 0 ? 1 : 0;
         } else {
-          const prod = BigInt(R(0)) * BigInt(R(1)); // 32×32 → 64 bit: (D+3 … D)
+          const prod = BigInt(R(0)) * BigInt(R(1)); // 32×32 → 64 bit: (D+3 … D); T/C için de aynı sıra (çıkarım)
           this.writeW(dst, Number(BigInt.asIntN(32, prod)), true);
-          if (dst.k === 'dev' && dst.type === 'D') this.writeW({ k: 'dev', type: 'D', index: dst.index + 2 }, Number(BigInt.asIntN(32, prod >> 32n)), true);
+          const hi = this.shifted(dst, 2);
+          if (hi) this.writeW(hi, Number(BigInt.asIntN(32, prod >> 32n)), true);
           this.M[1020] = prod === 0n ? 1 : 0;
         }
         break;
@@ -551,8 +620,9 @@ export class Machine {
         const quo = Math.trunc(a / b);
         const rem = a % b;
         W(2, wrap(quo));
-        const dst = w[2];
-        if (dst && dst.k === 'dev' && dst.type === 'D') this.writeW({ k: 'dev', type: 'D', index: dst.index + (d32 ? 2 : 1) }, rem, d32);
+        // kalan: D+1 (32 bitte D+3, D+2); T/C hedefte de bir sonraki kelime (çıkarım: D kuralına paralel)
+        const remAt = w[2] ? this.shifted(w[2], d32 ? 2 : 1) : null;
+        if (remAt) this.writeW(remAt, rem, d32);
         this.M[1020] = quo === 0 ? 1 : 0;
         break;
       }
@@ -630,7 +700,7 @@ export class Machine {
   /** Programda geçen cihazlar, türe göre sıralı */
   usedDevices(): Record<DevType, string[]> {
     const sets: Record<DevType, Set<number>> = { X: new Set(), Y: new Set(), M: new Set(), S: new Set(), T: new Set(), C: new Set(), D: new Set() };
-    for (const it of this.program.instrs) for (const o of it.ops) if (o.addr && !o.invalid) sets[o.addr.type].add(o.addr.index);
+    for (const it of this.program.instrs) for (const a of instrDevices(it, this.profile)) sets[a.type].add(a.index);
     const out = {} as Record<DevType, string[]>;
     for (const t of Object.keys(sets) as DevType[]) out[t] = [...sets[t]].sort((a, b) => a - b).map((i) => formatAddress(t, i));
     return out;
@@ -653,6 +723,53 @@ export class Machine {
     for (const d of u.D) o[d] = this.value(d);
     return o;
   }
+}
+
+/**
+ * Çevrimiçi düzenleme eşlemesi: yeni programın her komutu için eski programdaki karşılığı (yoksa -1).
+ * Anahtar, komutun kendi satırında (ladder satırı) baştan kendisine kadar olan komutların metnidir; böylece
+ * koşulu değişen bir çıkış "değişmiş" sayılır. Sıra korunarak en uzun ortak alt dizi (LCS) ile eşlenir.
+ */
+function matchInstrs(old: Machine, cur: Machine): Int32Array {
+  const keys = (m: Machine): string[] => {
+    const out: string[] = [];
+    const ins = m.program.instrs;
+    let prefix = '';
+    let r = 0;
+    for (let i = 0; i < ins.length; i++) {
+      while (r < m.rungs.length && m.rungs[r]!.end <= i) r++;
+      if (m.rungs[r]?.start === i) prefix = '';
+      const it = ins[i]!;
+      prefix += (prefix ? '|' : '') + [it.mn, ...it.ops.map((o) => o.raw)].join(' ');
+      out.push(prefix);
+    }
+    return out;
+  };
+  const a = keys(old);
+  const b = keys(cur);
+  const res = new Int32Array(b.length).fill(-1);
+  const n = a.length;
+  const m = b.length;
+  if (!n || !m) return res;
+  // dp[i][j] = a[i..], b[j..] için LCS uzunluğu
+  const w = m + 1;
+  const dp = new Int32Array((n + 1) * w);
+  for (let i = n - 1; i >= 0; i--) {
+    for (let j = m - 1; j >= 0; j--) {
+      dp[i * w + j] = a[i] === b[j] ? dp[(i + 1) * w + j + 1]! + 1 : Math.max(dp[(i + 1) * w + j]!, dp[i * w + j + 1]!);
+    }
+  }
+  let i = 0;
+  let j = 0;
+  while (i < n && j < m) {
+    if (a[i] === b[j]) {
+      res[j] = i;
+      i++;
+      j++;
+    } else if (dp[(i + 1) * w + j]! >= dp[i * w + j + 1]!) i++;
+    else j++;
+  }
+  return res;
 }
 
 function compare(a: number, b: number, op: CmpOp): boolean {

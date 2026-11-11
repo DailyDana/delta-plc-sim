@@ -21,7 +21,7 @@ Kurulum gerekmez. İnternetsiz kullanmak için [Releases](https://github.com/Dai
 
 ## Zamanlayıcı ve sayıcılar
 
-Tarayıcı arayüzü şimdilik sadeleştirilmiş tabloyu kullanır: T0–T199 100 ms, T200–T239 10 ms, T240–T255 1 ms (`TMR T0 K50` = 5 s); C0–C199 16 bit yukarı sayıcı. Yeni çekirdekte gerçek model tabloları var (ör. ES2: T127 1 ms, T240–T245 10 ms birikimli, T246–T249 1 ms birikimli, T250–T255 100 ms birikimli); arayüz Aşama 2'de bunlara geçecek. Bu bir öğrenme aracıdır, gerçek PLC'nin yerini tutmaz.
+Ana adresteki eski arayüz (v1) sadeleştirilmiş tabloyu kullanır: T0–T199 100 ms, T200–T239 10 ms, T240–T255 1 ms (`TMR T0 K50` = 5 s); C0–C199 16 bit yukarı sayıcı. Yeni arayüzde (v2, önizleme adresinde) gerçek model tabloları var (ör. ES2: T127 1 ms, T240–T245 10 ms birikimli, T246–T249 1 ms birikimli, T250–T255 100 ms birikimli); model üst çubuktan seçilir. Bu bir öğrenme aracıdır, gerçek PLC'nin yerini tutmaz.
 
 ## Geliştirme
 
@@ -29,7 +29,9 @@ Tarayıcı arayüzü (v1) derleme adımı olmadan çalışır: `index.html`, `pl
 
 Yeni arayüz (v2) React + Vite + Zustand + CodeMirror ile `src/ui/` altında; giriş `web/index.html`.
 
-Yeni çekirdek (v2) TypeScript ile `src/core/` altında: IL ayrıştırıcı ve statik analiz, gerçek PLC gibi komut komut çalışan sanal makine, ladder ↔ IL dönüşümü (iç içe MPS), Delta kılavuzlarından alınmış model profilleri (ES2, SS2, EH3). Arayüz Aşama 2'de bu çekirdeğe geçecek.
+Yeni çekirdek (v2) TypeScript ile `src/core/` altında: IL ayrıştırıcı ve statik analiz, gerçek PLC gibi komut komut çalışan sanal makine, ladder ↔ IL dönüşümü (iç içe MPS), Delta kılavuzlarından alınmış model profilleri (ES2, SS2, EH3). Yeni arayüz bu çekirdeği kullanır.
+
+Örnek devrelerin kaynağı `devreler/*.txt`; `npm run ornekler` iki örnek listesini bunlardan üretir.
 
 ```
 npm install

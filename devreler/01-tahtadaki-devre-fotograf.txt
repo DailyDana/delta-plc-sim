@@ -1,5 +1,7 @@
 #X0 start
 #X1 stop
+; Dene: bir şeye basma; Y0 yanık başlar, 15 s sonra Y1 yanar. X0'a bas: Y0 ve Y1 söner.
+; X1'i 10 s basılı tut: Y2 yanar. (Tahtadan olduğu gibi alındı; fotoğraf kesik olduğu için devre yarım)
 ; Start'a basınca M0 kurulur (SET)
 LD X0
 SET M0

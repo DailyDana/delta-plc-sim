@@ -291,7 +291,8 @@ export function LadderView() {
     } else {
       const closedOf = (id: string): boolean => {
         const i = instrOf.get(id);
-        if (m.traced && i !== undefined && i < m.closed.length) return m.closed[i] === 1;
+        // stale: motor son geçerli (eski) programı çalıştırıyor, komut sıraları bu ağaçla eşleşmez
+        if (m.traced && !engine.stale && i !== undefined && i < m.closed.length) return m.closed[i] === 1;
         // eşleme yok: cihaz durumundan yaklaşık (kenar kontakları gösterilmez)
         const loc = locate(ladder, id);
         if (loc?.kind !== 'contact') return false;

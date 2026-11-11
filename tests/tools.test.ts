@@ -18,8 +18,8 @@ describe('simülasyon', () => {
     expect(at('X0', 1)).toBe(0);
     expect(at('Y1', 1)).toBe(10);
     expect(at('Y1', 0)).toBe(5000);
-    expect(at('Y2', 1)).toBe(5000);
-    expect(r.final).toMatchObject({ Y0: 1, Y2: 1, T0: '50/50' });
+    expect(at('Y2', 1)).toBe(5500); // 0,5 s geçiş boşluğu: yıldız bıraktıktan sonra üçgen çeker
+    expect(r.final).toMatchObject({ Y0: 1, Y1: 0, Y2: 1, T0: '50/50', T1: '55/55' });
   });
   it('izleme listesi ve bozuk program', () => {
     const r = simulate(EXAMPLES[1]!.il, { events: parseEvents('0:X0=1'), duration: 50, watch: ['Y0'] });

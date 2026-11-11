@@ -243,7 +243,7 @@ export function IlEditor() {
     if (!v) return;
     const m = engine.machine;
     const lines: number[] = [];
-    if (engine.live && m && m.traced && m.accOut.length === program.instrs.length && v.state.doc.toString() === useStore.getState().doc.il) {
+    if (engine.live && m && m.traced && !engine.stale && m.accOut.length === program.instrs.length && v.state.doc.toString() === useStore.getState().doc.il) {
       program.instrs.forEach((it, i) => {
         if (m.accOut[i]) lines.push(it.line);
       });

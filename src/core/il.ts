@@ -1,7 +1,7 @@
 // IL (komut listesi) ayrıştırıcı, işlenen denetimi ve yapısal analiz.
 // Sanal makine doğrudan bu komut dizisini çalıştırır; ladder ağacı yalnızca düzenleyici içindir.
 
-import { parseAddress, parseConstant, parseKn, type Address, type WordRef } from './devices';
+import { formatAddress, parseAddress, parseConstant, parseKn, type Address, type DevType, type WordRef } from './devices';
 import { diag, type Diagnostic } from './diagnostics';
 import { INSTRUCTIONS, MAX_MPS_DEPTH, type InstrDef } from './instructions';
 import { counterRange, getProfile, type Profile } from './profiles';
@@ -60,6 +60,7 @@ export function parseIl(text: string, profile: Profile = getProfile()): ParseRes
   const labels: Record<string, string> = {};
   const diagnostics: Diagnostic[] = [];
   let pending: string[] = [];
+  let endSeen = false;
 
   const lines = text.split(/\r?\n/);
   for (let i = 0; i < lines.length; i++) {
@@ -83,7 +84,15 @@ export function parseIl(text: string, profile: Profile = getProfile()): ParseRes
     if (!raw) continue;
     const tok = raw.split(/[\s,]+/);
     const mn = (tok[0] ?? '').toUpperCase();
-    if (mn === 'END') break;
+    if (mn === 'END') {
+      // END programı bitirir: sonrasındaki komutlar hiç çalışmaz (ayrıştırılmaz); öğrenci bunu bilmeli
+      endSeen = true;
+      const after = commandLinesAfter(lines, i + 1);
+      if (after.count) {
+        diagnostics.push(diag('W_AFTER_END', `END'den sonraki ${after.count} komut çalışmaz (program END'de biter); bu komutları END'in önüne taşı`, { line: after.first }));
+      }
+      break;
+    }
     if (mn === 'NOP') continue;
     const def = INSTRUCTIONS[mn];
     if (!def) {
@@ -93,11 +102,16 @@ export function parseIl(text: string, profile: Profile = getProfile()): ParseRes
     const args = tok.slice(1).filter(Boolean);
     const at = { line, instr: instrs.length };
     if (args.length < def.operands.length) {
-      diagnostics.push(diag('E_OPERAND_MISSING', `${mn}: ${def.operands.map((o) => o.name).join(', ')} eksik`, at));
+      // Tek mesaj: hangi işlenenler eksik + doğru yazım örneği (eksik her işlenen için ayrıca hata basılmaz)
+      const missing = def.operands.slice(args.length).map((o) => o.name);
+      const names = missing.length > 1 ? missing.slice(0, -1).join(', ') + ' ve ' + missing[missing.length - 1] : missing[0];
+      diagnostics.push(diag('E_OPERAND_MISSING', `${mn}: ${names} eksik. Örnek: ${exampleOf(def)}`, at));
     } else if (args.length > def.operands.length) {
-      diagnostics.push(diag('E_OPERAND_EXTRA', `${mn}: fazla işlenen (${args.slice(def.operands.length).join(' ')})`, at));
+      diagnostics.push(diag('E_OPERAND_EXTRA', `${mn}: fazla işlenen (${args.slice(def.operands.length).join(' ')}). Örnek: ${exampleOf(def)}`, at));
     }
-    const ops: Operand[] = def.operands.map((spec, j) => checkOperand(mn, spec.kinds, args[j] ?? '', profile, diagnostics, at, def));
+    const ops: Operand[] = def.operands.map((spec, j) =>
+      j < args.length ? checkOperand(mn, spec.kinds, args[j]!, profile, diagnostics, at, def) : { raw: '', invalid: true },
+    );
     if (def.base === 'ZRST' && ops[0]?.addr && ops[1]?.addr && ops[0].addr.type !== ops[1].addr.type) {
       diagnostics.push(diag('E_OPERAND_KIND', `${mn}: D1 ve D2 aynı türde olmalı (${ops[0].addr.text}, ${ops[1].addr.text})`, at));
       ops[1].invalid = true;
@@ -109,7 +123,128 @@ export function parseIl(text: string, profile: Profile = getProfile()): ParseRes
     }
     instrs.push(instr);
   }
+  if (!endSeen && instrs.length) {
+    diagnostics.push(diag('W_NO_END', 'Program END ile bitmeli: son komuttan sonra END yaz', { line: instrs[instrs.length - 1]!.line }));
+  }
   return { program: { instrs, labels }, diagnostics };
+}
+
+/** END'den sonraki komut satırları (açıklama, etiket, boş satır, NOP ve tekrar END sayılmaz) */
+function commandLinesAfter(lines: readonly string[], from: number): { count: number; first: number } {
+  let count = 0;
+  let first = 0;
+  for (let j = from; j < lines.length; j++) {
+    const r = (lines[j] ?? '').trim();
+    if (!r || r[0] === '#' || r[0] === ';' || r.startsWith('//')) continue;
+    const s = r.replace(/(;|\/\/).*$/, '').trim();
+    if (!s) continue;
+    const mn = (s.split(/[\s,]+/)[0] ?? '').toUpperCase();
+    if (mn === 'END' || mn === 'NOP') continue;
+    count++;
+    if (!first) first = j + 1;
+  }
+  return { count, first };
+}
+
+/** Uygulama komutlarının örnek işlenenleri (eksik işlenen mesajı için) */
+const API_EXAMPLE_OPS: Record<string, string> = {
+  MOV: 'K10 D0',
+  CMP: 'D0 K10 M0',
+  ZCP: 'K10 K20 D0 M0',
+  ADD: 'D0 K1 D2',
+  SUB: 'D0 K1 D2',
+  MUL: 'D0 K2 D10',
+  DIV: 'D0 K2 D10',
+  INC: 'D0',
+  DEC: 'D0',
+  WAND: 'D0 H00FF D2',
+  WOR: 'D0 H00FF D2',
+  WXOR: 'D0 H00FF D2',
+  ZRST: 'M0 M10',
+  ALT: 'Y0',
+};
+
+/** Komutun doğru yazımına bir örnek (ör. "TMR T0 K50 (T0 100 ms tabanlı: K50 = 5 s)") */
+export function exampleOf(def: InstrDef): string {
+  const mn = def.mn;
+  if (def.base) return `${mn} ${API_EXAMPLE_OPS[def.base] ?? ''}`.trim();
+  if (def.contact === 'CMP') return `${mn} D0 K10`;
+  if (def.contact && def.operands.length) return `${mn} X0`;
+  switch (mn) {
+    case 'TMR': return 'TMR T0 K50 (T0 100 ms tabanlı: K50 = 5 s)';
+    case 'CNT': return 'CNT C0 K5 (5 yükselen kenarda kontak kapanır)';
+    case 'OUT':
+    case 'SET':
+    case 'RST':
+      return `${mn} Y0`;
+    case 'PLS':
+    case 'PLF':
+      return `${mn} M0`;
+    default:
+      return mn;
+  }
+}
+
+/** Bir cihaz adresi (tür + sıra) */
+export interface DevRef {
+  type: DevType;
+  index: number;
+}
+
+/**
+ * Komutun dokunduğu (okuduğu ya da yazdığı) bütün cihazlar. VM'nin usedDevices'ı, snapshot, simulate/CLI ve
+ * G/Ç paneli bunu kullanır: KnY/KnM bit grupları, CMP/ZCP'nin D, D+1, D+2 bitleri, 32 bit çiftler (Dn+1, Tn+1, Cn+1),
+ * MUL/DIV'in üst kelimesi/kalanı (D+1; 32 bitte D+1…D+3), ZRST aralığı, TMR/CNT ayarı D'den okunuyorsa o D.
+ */
+export function instrDevices(it: Instr, profile: Profile): DevRef[] {
+  const out: DevRef[] = [];
+  const add = (type: DevType, index: number): void => {
+    if (index >= 0 && index <= profile.max[type]) out.push({ type, index });
+  };
+  const base = it.def.base;
+  if (base === 'ZRST') {
+    const a = it.ops[0];
+    const b = it.ops[1];
+    if (a?.addr && !a.invalid && b?.addr && !b.invalid && a.addr.type === b.addr.type) {
+      const from = Math.min(a.addr.index, b.addr.index); // D1 > D2 ise yalnızca D2 (s.3-102)
+      for (let k = from; k <= b.addr.index; k++) add(a.addr.type, k);
+    } else for (const o of it.ops) if (o.addr && !o.invalid) add(o.addr.type, o.addr.index);
+    return out;
+  }
+  it.ops.forEach((o, j) => {
+    if (o.invalid) return;
+    const w = o.word;
+    if (w?.k === 'kn') {
+      for (let b = 0; b < w.n * 4; b++) add(w.type, w.index + b);
+      return;
+    }
+    if (w?.k === 'dev') {
+      const isDst = !!it.def.operands[j]?.kinds.includes('WD');
+      const n = wordDevices(profile, w.type, w.index, !!it.def.d32, isDst && (base === 'MUL' || base === 'DIV'));
+      for (let k = 0; k < n; k++) add(w.type, w.index + k);
+      return;
+    }
+    if (o.addr) add(o.addr.type, o.addr.index);
+  });
+  if (base === 'CMP' || base === 'ZCP') {
+    const r = it.ops[it.ops.length - 1];
+    if (r?.addr && !r.invalid) {
+      add(r.addr.type, r.addr.index + 1);
+      add(r.addr.type, r.addr.index + 2);
+    }
+  }
+  return out;
+}
+
+/**
+ * Kelime işleneninin kapladığı ardışık cihaz sayısı. 16 bit kelimeler (D, T, C0–C199): 32 bit komutta 2
+ * (s.3-17: "D1 yüksek, D0 düşük kelime; bu kural T ve 16 bit C0–C199 için de geçerli"), MUL/DIV hedefinde ×2
+ * (16 bitte D+1, 32 bitte D+1…D+3; s.3-77, 3-79). 32 bit sayıcı (C200+) tek başına 32 bittir: MUL/DIV hedefinde 2.
+ */
+export function wordDevices(profile: Profile, type: 'D' | 'T' | 'C', index: number, d32: boolean, mulDivDst: boolean): number {
+  const c32 = type === 'C' && counterRange(profile, index)?.bits === 32;
+  if (c32) return mulDivDst ? 2 : 1;
+  return (d32 ? 2 : 1) * (mulDivDst ? 2 : 1);
 }
 
 /** Tek bir komutun işlenenlerini denetler (düzenleyicideki anlık hata gösterimi için) */
@@ -137,7 +272,10 @@ function checkOperand(
     return op;
   };
   if (!raw) return bad('E_OPERAND_MISSING', `${mn}: işlenen eksik`);
-  if (kinds.includes('WS') || kinds.includes('WD')) return checkWord(mn, kinds.includes('WS'), raw, profile, op, bad, !!idef?.d32);
+  if (kinds.includes('WS') || kinds.includes('WD')) {
+    const mulDivDst = kinds.includes('WD') && (idef?.base === 'MUL' || idef?.base === 'DIV');
+    return checkWord(mn, kinds.includes('WS'), raw, profile, op, bad, !!idef?.d32, mulDivDst);
+  }
   if (kinds.includes('KD')) {
     // TMR/CNT ayar değeri: K0~K32767 ya da D0~D9999 (kılavuz s.3-281/282)
     const k = parseConstant(raw) ?? (/^\d+$/.test(raw) ? parseInt(raw, 10) : null);
@@ -215,6 +353,7 @@ function checkWord(
   op: Operand,
   bad: (code: Parameters<typeof diag>[0], msg: string) => Operand,
   d32: boolean,
+  mulDivDst = false,
 ): Operand {
   const c = parseConstant(raw) ?? (/^-?\d+$/.test(raw) ? parseInt(raw, 10) : null);
   if (c !== null) {
@@ -252,9 +391,21 @@ function checkWord(
     return bad('E_OPERAND_KIND', `${mn} ${addr.text}: tek bit kelime olamaz; bit grubu için K1${addr.text} gibi yaz (4 bit)`);
   }
   if (addr.index > profile.max[addr.type]) return bad('E_ADDR_RANGE', `${addr.text}: aralık dışı (${addr.type}0–${addr.type}${profile.max[addr.type]})`);
-  if (d32 && addr.type === 'D' && addr.index + 1 > profile.max.D) return bad('E_ADDR_RANGE', `${addr.text}: 32 bit için ${addr.text} ve D${addr.index + 1} gerekir`);
   if (!d32 && addr.type === 'C' && counterRange(profile, addr.index)?.bits === 32) {
     return bad('E_OPERAND_KIND', `${addr.text}: 32 bit sayıcıdır; 32 bit komut (D önekli) kullan`);
+  }
+  // Ardışık kelimeler: 32 bit komutta Dn+1/Tn+1/Cn+1 yüksek kelime (s.3-17), MUL/DIV hedefinde üst kelime/kalan (s.3-77, 3-79)
+  const n = wordDevices(profile, addr.type, addr.index, d32, mulDivDst);
+  if (n > 1) {
+    const last = addr.index + n - 1;
+    const lastText = formatAddress(addr.type, last);
+    const why = mulDivDst ? `${mn} sonucu ${n} ardışık cihaz kaplar` : `32 bit işlem ${n} ardışık 16 bit cihaz kullanır (${addr.text} düşük, ${formatAddress(addr.type, addr.index + 1)} yüksek kelime)`;
+    if (last > profile.max[addr.type]) return bad('E_ADDR_RANGE', `${addr.text}: ${why}; ${lastText} aralık dışı (${addr.type}0–${addr.type}${profile.max[addr.type]})`);
+    if (addr.type === 'C') {
+      const r0 = counterRange(profile, addr.index);
+      const r1 = counterRange(profile, last);
+      if (r0?.bits !== r1?.bits) return bad('E_ADDR_RANGE', `${addr.text}: ${why}; ${lastText} 32 bit sayıcıdır, 16 bit sayıcı çifti C0–C199 içinde kalmalı`);
+    }
   }
   op.addr = addr;
   op.word = { k: 'dev', type: addr.type, index: addr.index };
@@ -271,17 +422,34 @@ export function analyze(program: IlProgram): { rungs: RungSpan[]; diagnostics: D
   const ins = program.instrs;
   let start = -1;
   let depth = 0;
-  let mps = 0;
+  /** Açık blokları başlatan yükleme komutlarının sırası (ilki satırın kendisi; ANB/ORB en sondakini kapatır) */
+  let loads: number[] = [];
+  /** Kapatılmamış MPS komutlarının sırası */
+  let mpsAt: number[] = [];
   let outputs = 0;
   let lastWasOutput = false;
-  const coilRung = new Map<string, number>();
+  /** Bu satırda açık blok hatası bir kez söylendi mi */
+  let openReported = false;
+  const coilRung = new Map<string, { rung: number; line: number }>();
+  const srcText = (k: number): string => {
+    const x = ins[k];
+    return x ? [x.mn, ...x.ops.map((o) => o.raw)].join(' ').trim() : '?';
+  };
+  /** "2. satırdaki LD X1 ile başlayan blok ANB/ORB ile birleştirilmedi" */
+  const openBlockMsg = (head: string): string => {
+    const open = loads.slice(1);
+    const which = open.map((k) => `${ins[k]?.line}. satırdaki ${srcText(k)}`).join(', ');
+    return `${head} öncesi açık blok var: ${which} ile başlayan ${open.length > 1 ? 'bloklar' : 'blok'} ANB ya da ORB ile birleştirilmedi (seri bağlamak için ANB, paralel için ORB; tek kontaksa LD yerine AND/OR yaz)`;
+  };
 
   const close = (end: number) => {
     if (start < 0) return;
     const ri = rungs.length;
     const first = ins[start];
     if (outputs === 0) diagnostics.push(diag('E_NO_OUTPUT', 'Satırda çıkış (bobin) yok', { line: first?.line ?? 0, instr: start, rung: ri }));
-    if (mps > 0) diagnostics.push(diag('W_MPS_UNCLOSED', 'MPS açıldı ama MPP ile kapatılmadı', { line: ins[end - 1]?.line ?? 0, instr: end - 1, rung: ri }));
+    for (const k of mpsAt) {
+      diagnostics.push(diag('W_MPS_UNCLOSED', 'MPS açıldı ama MPP ile kapatılmadı (son dal MPP ile başlamalı)', { line: ins[k]?.line ?? 0, instr: k, rung: ri }));
+    }
     const span: RungSpan = { start, end };
     if (first?.comment) span.comment = first.comment;
     rungs.push(span);
@@ -295,10 +463,15 @@ export function analyze(program: IlProgram): { rungs: RungSpan[]; diagnostics: D
           close(i);
           start = i;
           depth = 1;
-          mps = 0;
+          loads = [i];
+          mpsAt = [];
           outputs = 0;
+          openReported = false;
           at.rung = rungs.length;
-        } else depth++;
+        } else {
+          depth++;
+          loads.push(i);
+        }
         lastWasOutput = false;
         break;
       case 'and':
@@ -309,31 +482,40 @@ export function analyze(program: IlProgram): { rungs: RungSpan[]; diagnostics: D
         break;
       case 'block':
         if (depth < 2) diagnostics.push(diag('E_BLOCK_UNDERFLOW', `${it.mn}: birleştirilecek iki blok yok (her blok LD ile başlar)`, at));
-        else depth--;
+        else {
+          depth--;
+          loads.pop();
+        }
         lastWasOutput = false;
         break;
       case 'stack':
         if (it.mn === 'MPS') {
           if (start < 0) diagnostics.push(diag('E_NEED_LOAD', 'MPS: önce LD ile başlamalı', at));
-          else if (depth !== 1) diagnostics.push(diag('E_OPEN_BLOCK', 'MPS öncesi açık blok var (ANB/ORB eksik)', at));
-          mps++;
-          if (mps > MAX_MPS_DEPTH) diagnostics.push(diag('E_MPS_DEPTH', `MPS en fazla ${MAX_MPS_DEPTH} seviye iç içe olabilir`, at));
-        } else if (mps === 0) {
+          else if (depth !== 1 && !openReported) {
+            diagnostics.push(diag('E_OPEN_BLOCK', openBlockMsg('MPS'), at));
+            openReported = true;
+          }
+          mpsAt.push(i);
+          if (mpsAt.length > MAX_MPS_DEPTH) diagnostics.push(diag('E_MPS_DEPTH', `MPS en fazla ${MAX_MPS_DEPTH} seviye iç içe olabilir`, at));
+        } else if (mpsAt.length === 0) {
           diagnostics.push(diag('E_MPS_UNDERFLOW', `${it.mn}: önce MPS gerekir`, at));
-        } else if (it.mn === 'MPP') mps--;
+        } else if (it.mn === 'MPP') mpsAt.pop();
         lastWasOutput = false;
         break;
       case 'output': {
         if (start < 0) diagnostics.push(diag('E_NEED_LOAD', `${it.mn}: önce LD ile başlamalı`, at));
-        else if (depth !== 1) diagnostics.push(diag('E_OPEN_BLOCK', `${it.mn} öncesi açık blok var (ANB/ORB eksik)`, at));
+        else if (depth !== 1 && !openReported) {
+          diagnostics.push(diag('E_OPEN_BLOCK', openBlockMsg(it.mn), at));
+          openReported = true;
+        }
         outputs++;
         lastWasOutput = true;
         const target = it.ops[0];
         if ((it.mn === 'OUT' || it.mn === 'TMR' || it.mn === 'CNT') && target?.addr) {
           const prev = coilRung.get(target.addr.text);
-          if (prev !== undefined && prev !== rungs.length) {
-            diagnostics.push(diag('W_DOUBLE_COIL', `${target.addr.text} birden çok satırda bobin olarak kullanılmış (çift bobin): son yazan satır kazanır`, at));
-          } else coilRung.set(target.addr.text, rungs.length);
+          if (prev !== undefined && prev.rung !== rungs.length) {
+            diagnostics.push(diag('W_DOUBLE_COIL', `${target.addr.text} birden çok satırda bobin olarak kullanılmış (çift bobin; ilk kullanım ${prev.line}. satırda): son yazan satır kazanır`, at));
+          } else if (prev === undefined) coilRung.set(target.addr.text, { rung: rungs.length, line: it.line });
         }
         break;
       }

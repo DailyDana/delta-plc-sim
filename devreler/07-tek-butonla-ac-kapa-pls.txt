@@ -1,5 +1,6 @@
 #X0 buton
 #Y0 lamba
+; Dene: X0'a her basışta lamba durum değiştirir; basılı tutmak bir şey değiştirmez
 ; X0'ın yükselen kenarında M0 tek tarama 1 olur
 LD X0
 PLS M0

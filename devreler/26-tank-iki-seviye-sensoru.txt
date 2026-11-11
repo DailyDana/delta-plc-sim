@@ -1,0 +1,13 @@
+#X0 alt seviye sensörü
+#X1 üst seviye sensörü
+#Y0 doldurma pompası
+; Dene: sensör 1 ise su o seviyede demektir. Başta ikisi de 0: pompa çalışır
+; X0'ı, sonra X1'i kilitle (tank doldu): pompa durur. X1'i bırak: pompa hâlâ durur
+; X0'ı da bırak (su alt seviyenin altına indi): pompa yeniden çalışır
+; Su alt seviyenin altındaysa pompa kurulur
+LDI X0
+SET Y0
+; Su üst seviyeye ulaşınca pompa sıfırlanır
+LD X1
+RST Y0
+END

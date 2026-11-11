@@ -1,5 +1,6 @@
 #X0 anahtar
 #Y0 flaşör
+; Dene: X0'ı kilitle (sağ tık); lamba saniyede bir yanıp söner
 ; M1013 özel rölesi 0,5 s açık / 0,5 s kapalı çakar
 LD X0
 AND M1013

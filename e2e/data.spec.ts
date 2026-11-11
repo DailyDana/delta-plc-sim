@@ -66,3 +66,33 @@ test('sayıcı değeri K1Y0 ile lambalarda ikilik görünür', async ({ page }) 
   await expect(page.locator('.lamp[data-y="Y2"]')).toHaveClass(/on/);
   expect(errs.list).toEqual([]);
 });
+
+test('IL yazarken ara bozuk durum: RUN sürer, bellek korunur, uyarı görünür; düzelince yeni programa geçilir', async ({ page }) => {
+  const errs = collectErrors(page);
+  await openClean(page);
+  await loadOnly(page, 'LD X0\nINCP D0\nSET M600\nLD M600\nOUT Y0\nEND', 'bozuk-ara');
+  const before = await page.evaluate(() => {
+    window.plc.press('X0', 50); // press belirlenimli ilerletir ve duraklatır; ardından gerçek zamanlı RUN
+    window.plc.run();
+    return window.plc.state();
+  });
+  expect(before.mode).toBe('run');
+  expect(before.D0).toBe(1);
+  expect(before.M600).toBe(1);
+  // kullanıcı yeni satır yazmaya başladı: "LD" tek başına geçersiz
+  await page.evaluate(() => window.__store!.getState().setIlText('LD X0\nINCP D0\nSET M600\nLD M600\nOUT Y0\nLD\nEND'));
+  await expect(page.locator('#stalewarn')).toBeVisible();
+  const mid = await page.evaluate(() => window.plc.state());
+  expect(mid.mode).toBe('run');
+  expect(mid.D0).toBe(1);
+  expect(mid.M600).toBe(1);
+  expect(mid.Y0).toBe(1);
+  // satır tamamlandı: yeni program bellek korunarak devralır
+  await page.evaluate(() => window.__store!.getState().setIlText('LD X0\nINCP D0\nSET M600\nLD M600\nOUT Y0\nLD M600\nOUT Y1\nEND'));
+  await expect(page.locator('#stalewarn')).toHaveCount(0);
+  await expect.poll(() => page.evaluate(() => window.plc.state().Y1)).toBe(1);
+  const after = await page.evaluate(() => window.plc.state());
+  expect(after.mode).toBe('run');
+  expect(after.D0).toBe(1);
+  expect(errs.list).toEqual([]);
+});

@@ -7,8 +7,39 @@ Simülatörde uygulanan davranış ve dayanağı. "Çıkarım" yazanlar kılavuz
 - D öneki 32 bit, P soneki darbe: yalnızca sürücü akımın yükselen kenarında bir tarama yürütülür (s.3-15, 3-17). P'siz komut her taramada yürütülür.
 - Yürütülmeyen komutun hedefi ve bayrakları korunur (s.3-18, 3-61).
 - 32 bit çift: D0 düşük, D1 yüksek kelime (s.3-17). T ve 16 bit C değerleri de kelime olarak kullanılır.
+- T ve C0–C199 16 bittir (cihaz tablosu s.2-2, 2-9: "T0~T255, 256 words", "C0~C199, 16-bit counter"; C200–C254 32 bit;
+  kelime = 16 bit, s.3-17 madde 5). 32 bit komutun işleneni
+  T ya da 16 bit C ise çift kullanılır: Tn/Cn düşük, Tn+1/Cn+1 yüksek kelime — s.3-17 madde 6: "This principle also applies
+  to timer T and 16-bit counters C0~C199". Simülatör böyle uygular (`DMOV K100000 C0` → C0 = −31072, C1 = 1). Çiftin üst cihazı
+  aralık dışındaysa (T255, D9999) ya da 32 bit bölgeye taşıyorsa (C199 → C200) hata verir. 32 bit sayıcı (C200+) tek başına
+  32 bittir ve yalnızca 32 bit komutla kullanılır (s.3-17 madde 7).
+- Çıkarım: 16 bit MUL'un 32 bit sonucu ve DIV'in kalanı T/C hedefinde de D'deki gibi bir sonraki cihaza yazılır
+  (`MUL K300 K300 T0` → T0 düşük, T1 yüksek kelime). s.3-77/3-79 işlenen tablosu D için T ve C'ye izin veriyor ama D+1'in
+  T/C için ne olduğunu açıkça yazmıyor; D kuralına (s.3-77, 3-79) ve s.3-17 madde 6'ya paralel karar. Hiçbir durumda 16 bit
+  cihazda 16 bit dışı değer kalmaz.
 - K: −32768…32767 (16 bit), H0000…HFFFF; 32 bitte −2147483648…2147483647 (s.2-9).
 - Bayraklar: M1020 sıfır, M1021 borç, M1022 elde (s.3-18). Hata: M1067 işlem hatası, M1068 kilit, D1067 hata kodu, D1068 adres (s.2-58).
+
+## Program yapısı ve tanılama
+- END: "PLC 0 adresinden END'e kadar tarar ve 0 adresine döner"; END programın sonuna konmalı (s.3-11; tarama sırası s.1-5).
+  Bu yüzden END'den sonraki komutlar hiç çalışmaz: simülatör onları atar ve **uyarı** verir (`W_AFTER_END`, ilk atılan
+  komutun satırında). END'i olmayan program için de uyarı verir (`W_NO_END`). Çıkarım: END eksikken gerçek PLC/WPLSoft'un
+  ne yaptığı (hata kodu mu, otomatik ekleme mi) bu kılavuzda yok; simülatör programı yine de sonuna kadar çalıştırır.
+- Simülatör kararı (kılavuz konusu değil): işlenen aralığı/adres hataları (`E_ADDR_RANGE`, `E_CONST_RANGE`, `E_ADDR_OCTAL`,
+  `E_ADDR_FORMAT`, `E_OPERAND_KIND`, `E_SPECIAL_READONLY`) programın çalışmasını engeller; geçersiz işlenen sessizce 0
+  sayılmaz. v1 profili eski davranışı korur (eşdeğerlik testi).
+- Simülatör kararı: çalışırken düzenlemede (çevrimiçi düzenleme) değişmeyen komutlar kenar belleğini devralır (satırdaki
+  kendisi ve önceki komutları aynı olan komut "değişmemiş" sayılır); yeni ya da değişmiş komut ilk taramada "önceki =
+  şimdiki" kabul eder, böylece düzenleme anında zaten ON olan koşul sahte kenar üretmez. Delta'nın çevrimiçi düzenleme
+  davranışı bu kılavuzda yok.
+
+## Saat darbeleri (M1011–M1014)
+- M1011 10 ms (5 ms açık / 5 ms kapalı), M1012 100 ms, M1013 1 s, M1014 1 dk (s.2-12 tablo, s.2-47). Saat taramadan bağımsız
+  akar, PLC STOP'tayken de çalışır (s.2-47 madde 2).
+- Simülatör yaklaşımı (kılavuzda yok): bit, taramanın başındaki simüle zamana göre okunur. Tarama süresi saatin yarım
+  periyoduna eşit ya da büyükse (10 ms taramada M1011) bu hep aynı fazı yakalar; bu durumda simülatör biti her taramada bir kez
+  değiştirir (gerçek donanımda tarama ile saat senkron olmadığı için bit göze "titreyen" görünür). 10 ms taramada
+  M1012/M1013/M1014 bundan etkilenmez.
 
 ## Kelime işlenenleri
 - Kaynak: K, H, KnX/KnY/KnM/KnS, T, C, D. Hedef: KnY/KnM/KnS, T, C, D (s.3-61). E/F indeks henüz yok.

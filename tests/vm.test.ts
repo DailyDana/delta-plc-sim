@@ -24,12 +24,14 @@ describe('sanal makine: örnek devreler (ES2)', () => {
     run(m, 50, { X1: 1 });
     expect(m.bit('Y0')).toBe(0);
   });
-  it('yıldız-üçgen (MPS) 5 s', () => {
+  it('yıldız-üçgen (MPS): 5 s yıldız, 0,5 s boşluk, sonra üçgen', () => {
     const m = machine(ex('Yıldız'));
     run(m, 50, { X0: 1 });
     run(m, 50, { X0: 0 });
     expect([m.bit('Y0'), m.bit('Y1'), m.bit('Y2')]).toEqual([1, 1, 0]);
     run(m, 5000);
+    expect([m.bit('Y0'), m.bit('Y1'), m.bit('Y2')]).toEqual([1, 0, 0]); // geçiş boşluğu: ikisi de bırakmış
+    run(m, 600);
     expect([m.bit('Y0'), m.bit('Y1'), m.bit('Y2')]).toEqual([1, 0, 1]);
   });
   it('trafik lambası döngüsü', () => {
