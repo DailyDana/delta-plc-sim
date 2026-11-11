@@ -1,8 +1,8 @@
 // Ladder ağacını çizilecek sahneye çevirir (saf fonksiyon: test edilebilir, React'ten bağımsız).
 // Her tel bir "güç anahtarı" taşır; canlı görünümde anahtarın değeri teli yeşile boyar.
 
-import type { Coil, Contact, ContactKind, Ladder, OutBranch, Series, Block } from '../../core';
-import type { Slot } from '../state/edit';
+import { isMcrRung, type Coil, type Contact, type ContactKind, type Ladder, type OutBranch, type Series, type Block } from '../../core';
+import { rungMc, type Slot } from '../state/edit';
 
 export const CW = 92; // kontak hücresi
 export const RH = 64; // satır yüksekliği
@@ -42,6 +42,22 @@ export interface RungItem {
   h: number;
   top: number;
   comment: string;
+  /** Kaç MC bloğunun içinde (açıklama metni blok çizgilerinin sağından başlar) */
+  mc: number;
+}
+/**
+ * Ana kontrol bloğu işareti: MC satırının altından MCR satırına kadar baranın yanında dikey çizgi.
+ * pw = MC kutusunun güç anahtarı: blok açıkken (MC yürütüldü ve koşulu 1) yeşil yanar.
+ */
+export interface McBlockItem {
+  level: string;
+  x: number;
+  y1: number;
+  y2: number;
+  pw: string;
+  /** İlk ve son satır (0'dan) */
+  from: number;
+  to: number;
 }
 export interface Scene {
   width: number;
@@ -53,6 +69,7 @@ export interface Scene {
   contacts: ContactItem[];
   coils: CoilItem[];
   rungs: RungItem[];
+  mcBlocks: McBlockItem[];
   slots: Slot[];
   /** Klavye gezintisi için öğelerin görsel sırası: satır satır, soldan sağa */
   order: { id: string; ri: number; x: number; y: number }[];
@@ -112,7 +129,7 @@ export function layout(l: Ladder): Scene {
   const colEnd = LEFT + cols * CW;
   const coilX = colEnd + GAP;
   const rightX = coilX + COILW + 14;
-  const sc: Scene = { width: rightX + 18, height: 0, coilX, rightX, bottomY: 0, wires: [], contacts: [], coils: [], rungs: [], slots: [], order: [] };
+  const sc: Scene = { width: rightX + 18, height: 0, coilX, rightX, bottomY: 0, wires: [], contacts: [], coils: [], rungs: [], mcBlocks: [], slots: [], order: [] };
   const wire = (x1: number, y1: number, x2: number, y2: number, pw?: string) => sc.wires.push(pw === undefined ? { x1, y1, x2, y2 } : { x1, y1, x2, y2, pw });
 
   let ri = 0;
@@ -181,7 +198,7 @@ export function layout(l: Ladder): Scene {
         sc.coils.push({ id: o.id, coil: o.coil, x: coilX, cy, ri });
         sc.order.push({ id: o.id, ri, x: coilX + COILW / 2, y: cy });
       }
-      if (!hasKids) sc.slots.push({ t: 'o', list: listRef, index: oi + 1, rungId, x: coilX + COILW / 2, y: oy + h * RH - 3 });
+      if (!hasKids && !mcRow) sc.slots.push({ t: 'o', list: listRef, index: oi + 1, rungId, x: coilX + COILW / 2, y: oy + h * RH - 3 });
       prevCy = cy;
       oy += h * RH;
     });
@@ -189,18 +206,24 @@ export function layout(l: Ladder): Scene {
   };
 
   let y = 8;
+  /** Geçerli satır MC/MCR satırı mı: ikinci çıkış için bırakma noktası yok */
+  let mcRow = false;
   l.rungs.forEach((r, i) => {
     ri = i;
+    mcRow = rungMc(r) !== null;
     const iz = ssz(r.input);
     const oz = listSize(r.outputs);
     const rows = Math.max(iz.h, oz.h);
     const top = y + HEAD;
     const H = rows * RH;
-    sc.rungs.push({ id: r.id, ri: i, y, h: HEAD + H, top, comment: r.comment });
+    sc.rungs.push({ id: r.id, ri: i, y, h: HEAD + H, top, comment: r.comment, mc: 0 });
     sc.slots.push({ t: 'r', index: i, x: (LEFT + rightX) / 2, y: y + 1, x0: LEFT, x1: rightX });
     sc.order.push({ id: r.id, ri: i, x: LEFT - 20, y: top + RH / 2 - 0.5 });
-    let pwJ = drawSeries(r.input, { owner: r.id, k: 'input' }, LEFT, top, iz.w, '1', 'input');
-    if (r.input.length === 0) pwJ = '1';
+    // Satır barası: MC ile kapatılmış bölgede enerjisiz (anahtar power.ts'te)
+    const rail = r.id + ':rail';
+    // MCR koşulsuz yazılır: girişine kontak bırakılamaz
+    let pwJ = drawSeries(r.input, { owner: r.id, k: 'input' }, LEFT, top, iz.w, rail, isMcrRung(r) ? null : 'input');
+    if (r.input.length === 0) pwJ = rail;
     const J = LEFT + iz.w * CW;
     // Tek çıkışlı satırda "çıkış dalına kontak" ile "satır sonuna seri" aynı şeydir: ayrı nokta gösterme
     const preSlots = r.outputs.length > 1 || r.outputs.some((o) => o.pre.length || o.children);
@@ -209,6 +232,28 @@ export function layout(l: Ladder): Scene {
     y = top + H + 10;
   });
   sc.bottomY = y;
+  // Ana kontrol blokları: MC satırından sonraki satırdan eşleşen MCR satırına kadar
+  const open: { level: string; ri: number; pw: string }[] = [];
+  l.rungs.forEach((r, i) => {
+    const k = rungMc(r);
+    if (!k) return;
+    const o = r.outputs.find((x) => x.coil && x.coil.type === k)!;
+    const level = o.coil!.op.toUpperCase();
+    if (k === 'MC') {
+      open.push({ level, ri: i, pw: o.id + ':q' });
+      return;
+    }
+    let j = open.length - 1;
+    while (j >= 0 && open[j]!.level !== level) j--;
+    if (j < 0) return;
+    const b = open[j]!;
+    open.length = j;
+    const first = sc.rungs[b.ri + 1];
+    const last = sc.rungs[i];
+    if (!first || !last) return;
+    sc.mcBlocks.push({ level, x: LEFT + 8 + Math.min(j, 3) * 6, y1: first.y + 6, y2: last.y + last.h - 6, pw: b.pw, from: b.ri + 1, to: i });
+    for (let k = b.ri + 1; k <= i; k++) sc.rungs[k]!.mc = Math.max(sc.rungs[k]!.mc, j + 1);
+  });
   sc.slots.push({ t: 'r', index: l.rungs.length, x: (LEFT + rightX) / 2, y: y + 24, x0: LEFT, x1: rightX });
   sc.height = y + 60;
   // görsel sıra: satır, sonra y, sonra x

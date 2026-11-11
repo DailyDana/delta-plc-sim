@@ -237,6 +237,8 @@ textarea.input {
 .center {
   position: relative;
   display: grid;
+  /* tek sütun içerik kadar büyümesin: uzun bir IL satırı alt paneli sağ panelin üstüne taşırıyordu */
+  grid-template-columns: minmax(0, 1fr);
   min-width: 0;
   min-height: 0;
 }
@@ -734,6 +736,26 @@ svg.ladder {
 }
 .ladder .rail.on {
   stroke: var(--on);
+}
+.ladder .mcrail {
+  fill: none;
+  stroke: var(--ink-3);
+  stroke-width: 2.4;
+  stroke-dasharray: 5 3;
+  stroke-linejoin: round;
+}
+.ladder .mcrail.on {
+  stroke: var(--on);
+  stroke-dasharray: none;
+  stroke-width: 3;
+}
+.ladder .mclvl {
+  fill: var(--ink-3);
+  font-size: 10px;
+  font-weight: 700;
+}
+.ladder .mclvl.on {
+  fill: var(--on);
 }
 .ladder .w {
   stroke: var(--wire);
@@ -1351,7 +1373,8 @@ table.grid tr.on td.addr {
 }
 .terms {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  /* minmax(0,…): uzun etiket sütunu genişletip dördüncü butonu panel dışına itmesin */
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 5px;
 }
 .xbtn {
@@ -1412,7 +1435,7 @@ table.grid tr.on td.addr {
 }
 .lamps {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 5px;
 }
 .lamp {

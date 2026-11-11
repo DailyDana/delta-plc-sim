@@ -73,6 +73,11 @@ export const COIL_PARTS: { k: CoilType; name: string; desc: string }[] = [
   { k: 'PLS', name: 'Yükselen darbe', desc: 'Tek taramalık darbe' },
   { k: 'PLF', name: 'Düşen darbe', desc: 'Tek taramalık darbe' },
 ];
+/** Ana kontrol (master control): her biri kendi satırını açar */
+export const MC_PARTS: { k: 'MC' | 'MCR'; name: string; desc: string }[] = [
+  { k: 'MC', name: 'Blok başı', desc: 'MC N0: koşulu 0 iken MCR\'ye kadarki satırlar akımsız (OUT düşer, SET kalır)' },
+  { k: 'MCR', name: 'Blok sonu', desc: 'MCR N0: aynı numaralı MC bloğunu bitirir; önüne kontak konmaz' },
+];
 /** Uygulama komutları (fonksiyon kutuları) */
 export const API_PARTS: { k: string; name: string; desc: string }[] = [
   { k: 'MOV', name: 'Taşı', desc: 'MOV: değeri kopyala (K10 → D0)' },

@@ -6,7 +6,7 @@ import { useStore } from '../state/store';
 import { apply, insertPart, newRung, type DragPayload } from '../state/edit';
 import { parseBackup } from '../state/persist';
 import { beginPointer, clickSuppressed, focusOperandSoon, registerTrash, useDrag, useEraser } from '../ladder/drag';
-import { API_PARTS, COIL_PARTS, CONTACT_PARTS, DATA_CONTACT_PARTS, PartIcon } from './symbols';
+import { API_PARTS, COIL_PARTS, CONTACT_PARTS, DATA_CONTACT_PARTS, MC_PARTS, PartIcon } from './symbols';
 import { askConfirm, askText, showText } from './dialogs';
 import { downloadText, fileSafe, openOrSwitch } from './fileops';
 
@@ -55,6 +55,14 @@ function Parts() {
         </div>
       </div>
       <div className="sect">
+        <h3>Ana kontrol (MC / MCR)</h3>
+        <div className="parts">
+          {MC_PARTS.map((p) => (
+            <Part key={p.k} payload={{ src: 'palette', g: 'o', k: p.k }} name={p.name} title={p.desc} />
+          ))}
+        </div>
+      </div>
+      <div className="sect">
         <h3>Veri ve karşılaştırma</h3>
         <div className="parts">
           {DATA_CONTACT_PARTS.map((p) => (
@@ -91,7 +99,7 @@ function Parts() {
           </button>
         </div>
       </div>
-      <p className="hint">Ladder'da bir öğe seçip <kbd>Enter</kbd>'a basarak komut da yazabilirsin: <code className="mono">X1</code>, <code className="mono">/X2</code>, <code className="mono">|X3</code>, <code className="mono">TMR T0 K50</code>.</p>
+      <p className="hint">Ladder'da bir öğe seçip <kbd>Enter</kbd>'a basarak komut da yazabilirsin: <code className="mono">X1</code>, <code className="mono">/X2</code>, <code className="mono">|X3</code>, <code className="mono">TMR T0 K50</code>, <code className="mono">MC N0</code>.</p>
     </div>
   );
 }

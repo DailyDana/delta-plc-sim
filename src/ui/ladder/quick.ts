@@ -5,11 +5,12 @@
 //   OUT Y1, SET M0, TMR T0 K50, CNT C0 5, RST C0, PLS M1 → çıkış ekle
 //   MOV K5 D0, INCP D0, CMP D0 K10 M0 → fonksiyon kutusu
 //   LD>= D0 K10 (seri), OR= C0 K5 (paralel), INV
+//   MC N0, MCR N0          → seçili satırın altına ana kontrol satırı (MC: X0 koşullu, MCR: koşulsuz)
 
 import { parseAddress } from '../../core/devices';
-import { INSTRUCTIONS, isCoilType, type CmpOp, type CoilType, type ContactKind } from '../../core/instructions';
+import { INSTRUCTIONS, isCoilType, isMcType, MAX_MC_LEVEL, type CmpOp, type CoilType, type ContactKind } from '../../core/instructions';
 import type { Ladder } from '../../core';
-import { locate, newCoilBranch, newContact, tidy, type EditResult } from '../state/edit';
+import { insertMcRung, locate, newCoilBranch, newContact, rungMc, tidy, type EditResult } from '../state/edit';
 import { parallel } from '../../core/ladder';
 
 export type QuickCmd =
@@ -35,6 +36,12 @@ export function parseQuick(text: string): QuickCmd | string {
   const head = parts[0]!;
   const def = INSTRUCTIONS[head];
   if (head === 'INV') return { t: 'contact', kind: 'INV', op: '', par: false };
+  if (isMcType(head)) {
+    const m = /^N(\d+)$/.exec(parts[1] ?? '');
+    if (!m) return `${head} için seviye yaz: N0–N${MAX_MC_LEVEL} (ör. ${head} N0)`;
+    if (parseInt(m[1]!, 10) > MAX_MC_LEVEL) return `${head}: seviye N0–N${MAX_MC_LEVEL} olmalı`;
+    return { t: 'coil', type: head, op: 'N' + parseInt(m[1]!, 10), k: '' };
+  }
   if (def?.contact === 'CMP') {
     if (parts.length < 3) return `${head} için iki işlenen yaz (ör. ${head} D0 K10)`;
     return { t: 'contact', kind: 'CMP', op: parts[1]!, op2: parts[2]!, cmp: def.cmp ?? '=', d32: !!def.d32, par: par || def.cls === 'or' };
@@ -81,6 +88,10 @@ export function parseQuick(text: string): QuickCmd | string {
 /** Komutu seçili öğeye göre uygula */
 export function applyQuick(l: Ladder, sel: string | null, q: QuickCmd): EditResult {
   const loc = locate(l, sel);
+  if (q.t === 'coil' && isMcType(q.type)) return insertMcRung(l, loc ? loc.ri : null, q.type, q.op);
+  const mcKind = loc ? rungMc(loc.r) : null;
+  if (q.t === 'contact' && mcKind === 'MCR' && !q.par) return { sel, refuse: 'MCR koşulsuz yazılır: önüne kontak konmaz' };
+  if (q.t === 'coil' && mcKind) return { sel, refuse: 'MC ve MCR satırda tek başına durur; başka çıkış için altına yeni satır ekle' };
   if (q.t === 'contact') {
     const c = newContact(q.kind, q.op, q.kind === 'CMP' ? { cmp: q.cmp ?? '=', op2: q.op2 ?? '', d32: !!q.d32 } : {});
     if (!loc) l.rungs.push({ id: 'q' + c.id, comment: '', input: [c], outputs: [newCoilBranch({ type: 'OUT', op: 'Y0', k: '' })] });

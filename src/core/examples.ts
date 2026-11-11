@@ -111,6 +111,10 @@ export const EXAMPLES: readonly Example[] = [
     name: "Tank: iki seviye sensörüyle pompa",
     il: "#X0 alt seviye sensörü\n#X1 üst seviye sensörü\n#Y0 doldurma pompası\n; Dene: sensör 1 ise su o seviyede demektir. Başta ikisi de 0: pompa çalışır\n; X0'ı, sonra X1'i kilitle (tank doldu): pompa durur. X1'i bırak: pompa hâlâ durur\n; X0'ı da bırak (su alt seviyenin altına indi): pompa yeniden çalışır\n; Su alt seviyenin altındaysa pompa kurulur\nLDI X0\nSET Y0\n; Su üst seviyeye ulaşınca pompa sıfırlanır\nLD X1\nRST Y0\nEND",
   },
+  {
+    name: "Ana şalter (MC / MCR)",
+    il: "#X0 ana şalter\n#X1 motor 1 start\n#X2 motor 1 stop\n#X3 motor 2 start\n#X4 motor 2 stop\n#X5 lamba sıfırla\n#Y0 motor 1\n#Y1 motor 2\n#Y2 çalıştı lambası\n#Y3 3 s uyarısı\n; Dene: X0'ı kilitle (ana şalter açık). X1 motor 1'i, X3 motor 2'yi çalıştırır; X2 ve X4 durdurur. Motor 1 kalkınca Y2 yanar, 3 s sonra Y3\n; Motorlar çalışırken X0'ı bırak: Y0, Y1 ve Y3 söner, T0 sıfırlanır, SET ile yanan Y2 kalır (baranın yanındaki N0 çizgisi söner)\n; X0'ı yeniden kilitle: motorlar kendiliğinden kalkmaz, yeniden start iste. X5 Y2'yi söndürür\n; Ana şalter: X0 kapalıyken MC ile MCR arasındaki satırlara akım gitmez\nLD X0\nMC N0\n; Motor 1 mühürleme\nLD X1\nOR Y0\nANI X2\nOUT Y0\n; Motor 2 mühürleme\nLD X3\nOR Y1\nANI X4\nOUT Y1\n; Motor 1 kalkınca lamba kurulur (SET: ana şalter kapanınca da yanık kalır)\nLD Y0\nSET Y2\n; Motor 1 3 s çalışınca uyarı (genel zamanlayıcı: ana şalter kapanınca sıfırlanır)\nLD Y0\nTMR T0 K30\nLD T0\nOUT Y3\n; Blok sonu: buradan sonrası ana şaltere bağlı değil\nMCR N0\n; Lamba sıfırlama\nLD X5\nRST Y2\nEND",
+  },
 ];
 
 /** v1 arayüzüyle ortak örnek sayısı */

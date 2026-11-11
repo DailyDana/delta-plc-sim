@@ -37,3 +37,25 @@ test('komut paleti (Ctrl+K) komut çalıştırır; yardım F1 ile açılır', as
   await expect(page.getByRole('dialog', { name: 'Nasıl kullanılır' })).toHaveCount(0);
   expect(errs.list).toEqual([]);
 });
+
+test('uzun IL satırı orta alanı genişletip sağ paneli örtmez', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await openClean(page);
+  await page.evaluate(() => window.plc.load('; ' + 'çok uzun bir açıklama satırı '.repeat(30) + '\nLD X0\nOUT Y0\nEND', 'uzun'));
+  const box = async (sel: string) => (await page.locator(sel).first().boundingBox())!;
+  const center = await box('main.center');
+  for (const sel of ['.bottom', '.ladderwrap']) {
+    const b = await box(sel);
+    expect(b.x + b.width, sel).toBeLessThanOrEqual(center.x + center.width + 1);
+  }
+  // uzun etiketli girişler: dördüncü buton sağ panelin içinde kalır
+  const labelled = ['#X0 çok uzun bir giriş etiketi', '#X1 motor bir start butonu', '#X2 motor bir stop butonu', '#X3 motor iki start butonu', 'LD X0', 'OUT Y0', 'END'].join('\n');
+  await page.evaluate((il) => window.plc.load(il, 'etiket'), labelled);
+  const panel = await box('.work > .side:last-child');
+  const x3 = await box('.xbtn >> nth=3');
+  expect(x3.x + x3.width).toBeLessThanOrEqual(panel.x + panel.width);
+  const vw = page.viewportSize()!.width;
+  const right = await box('.work > .side:last-child');
+  expect(right.x + right.width).toBeLessThanOrEqual(vw + 1);
+  expect(right.x).toBeGreaterThanOrEqual(center.x + center.width - 1);
+});

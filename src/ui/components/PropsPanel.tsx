@@ -1,6 +1,6 @@
 // Özellikler: seçili kontak / çıkış / fonksiyon kutusu / satırın düzenleyicisi.
 import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Copy, CornerDownRight, GitBranch, ListPlus, Rows3, Trash2 } from 'lucide-react';
-import { CMP_OPS, INSTRUCTIONS, checkInstrOperands, coilOperands, contactOperands, getProfile, parseAddress, timerRange, type CmpOp, type Coil, type ContactKind, type Diagnostic, type Profile } from '../../core';
+import { CMP_OPS, INSTRUCTIONS, MAX_MC_LEVEL, isMcType, checkInstrOperands, coilOperands, contactOperands, getProfile, parseAddress, timerRange, type CmpOp, type Coil, type ContactKind, type Diagnostic, type Profile } from '../../core';
 import { useStore } from '../state/store';
 import { API_BASES, apiVariant, apply, isApiType, locate, setCoil, setComment, setContact, setLabel, type Action } from '../state/edit';
 import { API_PARTS, COIL_PARTS, CONTACT_PARTS, DATA_CONTACT_PARTS, PartIcon } from './symbols';
@@ -301,6 +301,44 @@ function CoilProps({ id, c, ri, profile }: { id: string; c: Coil; ri: number; pr
   );
 }
 
+/** MC / MCR: yalnızca seviye (N0–N7) düzenlenir; satırın tek çıkışıdır */
+function McProps({ id, c, ri, profile }: { id: string; c: Coil; ri: number; profile: Profile }) {
+  const edit = useStore.getState().editLadder;
+  const errs = checkInstrOperands(c.type, [c.op], profile);
+  const isMc = c.type === 'MC';
+  const levels = Array.from({ length: MAX_MC_LEVEL + 1 }, (_, n) => 'N' + n);
+  return (
+    <div className="props">
+      <h2>
+        {isMc ? 'Ana kontrol başı (MC)' : 'Ana kontrol sonu (MCR)'} <span className="tag">satır {ri + 1}</span>
+      </h2>
+      <div className="field">
+        Seviye: en dıştaki blok N0, onun içindeki N1, …
+        <div className="kinds coils" role="radiogroup" aria-label="Ana kontrol seviyesi">
+          {levels.map((n) => (
+            <button key={n} role="radio" aria-checked={c.op === n} className={c.op === n ? 'on' : ''} title={`${c.type} ${n}`} onClick={() => edit((l) => setCoil(l, id, { op: n }))}>
+              {n}
+            </button>
+          ))}
+        </div>
+      </div>
+      {profile.id === 'v1' && <div className="errmsg">{c.type}: v1 profilinde desteklenmiyor; üst çubuktan ES2, SS2 ya da EH3 seç.</div>}
+      {errs[0] && <div className="errmsg">{errs[0].message}</div>}
+      <p className="tipline">
+        {isMc
+          ? `MC ${c.op}: koşulu 1 iken aşağıdaki satırlar MCR ${c.op}'e kadar normal çalışır. Koşul 0 olunca o satırlara akım gitmez: OUT bobinleri düşer, normal zamanlayıcılar sıfırlanır, SET ile kurulanlar ve sayıcı değerleri kalır, veri komutları çalışmaz.`
+          : `MCR ${c.op}: ${c.op} bloğunu bitirir. Koşulsuz yazılır, önüne kontak konmaz. Sonraki satırlar MC'den etkilenmez.`}
+      </p>
+      <div className="acts">
+        <Act a="delete" icon={<Trash2 />} danger>
+          Bloğu kaldır
+        </Act>
+      </div>
+      <p className="tipline">Bloğu kaldır: MC ve eşi MCR satırları silinir, aradaki satırlar kalır. Ladder'da baranın yanındaki kesikli çizgi bloğun satırlarını gösterir; çalışırken blok açıksa yeşil yanar.</p>
+    </div>
+  );
+}
+
 export function PropsPanel() {
   const ladder = useStore((s) => s.doc.ladder);
   const sel = useStore((s) => s.sel);
@@ -333,7 +371,11 @@ export function PropsPanel() {
   }
 
   if (loc.kind === 'contact') return <ContactProps c={loc.node} ri={loc.ri} profile={profile} />;
-  if (loc.kind === 'output') return loc.o.coil ? <CoilProps id={loc.o.id} c={loc.o.coil} ri={loc.ri} profile={profile} /> : null;
+  if (loc.kind === 'output') {
+    const c = loc.o.coil;
+    if (!c) return null;
+    return isMcType(c.type) ? <McProps id={loc.o.id} c={c} ri={loc.ri} profile={profile} /> : <CoilProps id={loc.o.id} c={c} ri={loc.ri} profile={profile} />;
+  }
 
   const r = loc.r;
   return (

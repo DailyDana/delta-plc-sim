@@ -5,18 +5,24 @@
 // Değerlendirme IL'in yürütülüşüyle aynıdır: paralel dallar ve satır girişi kendi bloğunu (LD) başlatır,
 // INV yalnızca kendi bloğunun o ana kadarki sonucunu ters çevirir. Çıkış dalının ön serisi ise
 // dallanma noktasındaki sonuçla devam eder (MPS/AND), orada INV gelen akımı da ters çevirir.
+//
+// Ana kontrol (MC/MCR): MC ile kapatılmış bölgedeki satırların barası enerjisizdir. Hangi satırın kapalı
+// bölgede yürütüldüğü yine VM izinden (mcClosed[]) gelir; satır barası anahtarı `<satır id>:rail`.
 
-import type { Ladder, OutBranch, Series } from '../../core';
+import type { Ladder, OutBranch, Rung, Series } from '../../core';
 
 export type PowerMap = Map<string, boolean>;
 
-export function computePower(l: Ladder, closedOf: (contactId: string) => boolean): PowerMap {
+/** railOf: satırın barası enerjili mi (verilmezse hep enerjili; MC'siz programlarda zaten öyle) */
+export function computePower(l: Ladder, closedOf: (contactId: string) => boolean, railOf?: (r: Rung) => boolean): PowerMap {
   const pm: PowerMap = new Map();
   pm.set('1', true);
+  /** Geçerli satırın barası: enerjisizse satırdaki hiçbir tel enerjilenmez (INV de akım üretemez; VM'de çıkış 0) */
+  let live = true;
   /** local: seri kendi bloğunu başlatır (LD); değilse gelen sonuçla devam eder (AND) */
   const ser = (s: Series, pin: boolean, local: boolean): { p: boolean; v: boolean } => {
     let acc = local ? true : pin;
-    const pw = (): boolean => (local ? pin && acc : acc);
+    const pw = (): boolean => live && (local ? pin && acc : acc);
     for (const b of s) {
       pm.set(b.id + ':in', pw());
       if (b.t === 'c' && b.kind === 'INV') {
@@ -43,6 +49,40 @@ export function computePower(l: Ladder, closedOf: (contactId: string) => boolean
       if (o.children) outs(o.children, p);
     }
   };
-  for (const r of l.rungs) outs(r.outputs, r.input.length ? ser(r.input, true, true).p : true);
+  for (const r of l.rungs) {
+    const rail = railOf ? railOf(r) : true;
+    live = rail;
+    pm.set(r.id + ':rail', rail);
+    outs(r.outputs, r.input.length ? ser(r.input, rail, true).p : rail);
+  }
   return pm;
+}
+
+/** Satırın ilk bobininin komut sırası (satırın komutları aynı MC bölgesinde yürütülür) */
+function firstCoilInstr(r: Rung, instrOf: Map<string, number>): number | undefined {
+  const walk = (list: OutBranch[]): number | undefined => {
+    for (const o of list) {
+      if (o.coil) {
+        const i = instrOf.get(o.id);
+        if (i !== undefined) return i;
+      }
+      if (o.children) {
+        const i = walk(o.children);
+        if (i !== undefined) return i;
+      }
+    }
+    return undefined;
+  };
+  return walk(r.outputs);
+}
+
+/**
+ * VM izinden satır barası: satırın komutları MC ile kapatılmış bölgede yürütüldüyse enerjisiz.
+ * MC satırda tek çıkış olduğundan (E_MC_ALONE) bölge yalnızca satır sınırında değişir; bir komuta bakmak yeter.
+ */
+export function mcRailOf(instrOf: Map<string, number>, mcClosed: ArrayLike<number>): (r: Rung) => boolean {
+  return (r) => {
+    const i = firstCoilInstr(r, instrOf);
+    return i === undefined || i >= mcClosed.length || mcClosed[i] !== 1;
+  };
 }

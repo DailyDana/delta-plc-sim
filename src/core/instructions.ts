@@ -11,9 +11,9 @@ export type OpClass = 'load' | 'and' | 'or' | 'inv' | 'block' | 'stack' | 'outpu
 /**
  * İşlenen türleri: bit cihazları (X…C), K sabit (TMR/CNT ayarı),
  * WS kelime kaynağı (K, H, KnX/Y/M/S, T, C, D), WD kelime hedefi (KnY/M/S, T, C, D),
- * KD ayar değeri (K ya da D), N sayı sabiti (K/H).
+ * KD ayar değeri (K ya da D), N sayı sabiti (K/H), NL ana kontrol seviyesi (MC/MCR: N0–N7).
  */
-export type OperandKind = DevType | 'K' | 'WS' | 'WD' | 'KD' | 'N';
+export type OperandKind = DevType | 'K' | 'WS' | 'WD' | 'KD' | 'N' | 'NL';
 
 export interface OperandSpec {
   name: string;
@@ -37,6 +37,8 @@ export interface InstrDef {
   pulse?: boolean;
   /** Delta API numarası */
   api?: number;
+  /** Ana kontrol komutu: MC (blok başı, satırı sonlandıran çıkış) ya da MCR (blok sonu, koşulsuz tek başına satır) */
+  mc?: 'MC' | 'MCR';
 }
 
 const BIT_SRC: readonly OperandKind[] = ['X', 'Y', 'M', 'S', 'T', 'C'];
@@ -86,6 +88,14 @@ const DEFS: InstrDef[] = [
   },
   { mn: 'PLS', cls: 'output', operands: [{ name: 'bit', kinds: ['Y', 'M'] }], desc: 'Yükselen kenarda tek taramalık darbe' },
   { mn: 'PLF', cls: 'output', operands: [{ name: 'bit', kinds: ['Y', 'M'] }], desc: 'Düşen kenarda tek taramalık darbe' },
+  {
+    mn: 'MC',
+    cls: 'output',
+    mc: 'MC',
+    operands: [{ name: 'seviye (N0–N7)', kinds: ['NL'] }],
+    desc: "Ana kontrol başlangıcı: koşulu 0 iken MCR'ye kadarki satırlar akımsız yürütülür (OUT düşer, SET kalır)",
+  },
+  { mn: 'MCR', cls: 'output', mc: 'MCR', operands: [{ name: 'seviye (N0–N7)', kinds: ['NL'] }], desc: 'Ana kontrol sonu: aynı numaralı MC bloğunu bitirir (önünde kontak olmaz, tek başına satır)' },
   { mn: 'END', cls: 'end', operands: [], desc: 'Program sonu' },
   { mn: 'NOP', cls: 'nop', operands: [], desc: 'İşlem yok' },
 ];
@@ -197,6 +207,12 @@ export function apiMnemonic(base: string, d32: boolean, pulse: boolean): string 
   if (d32 && !a.d32) return null;
   return (d32 ? a.d32! : a.base) + (pulse ? 'P' : '');
 }
+
+/** MC/MCR seviyeleri N0…N7 (en çok 8 iç içe; s.3-11) */
+export const MAX_MC_LEVEL = 7;
+export const MC_TYPES = ['MC', 'MCR'] as const;
+/** Bobin/kutu türü ana kontrol komutu mu (MC ya da MCR) */
+export const isMcType = (s: string): s is 'MC' | 'MCR' => s === 'MC' || s === 'MCR';
 
 /** MPS en fazla kaç seviye iç içe olabilir (Delta: 8) */
 export const MAX_MPS_DEPTH = 8;

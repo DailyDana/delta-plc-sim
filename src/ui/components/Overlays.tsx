@@ -137,6 +137,8 @@ export function HelpModal() {
           </ul>
           <h3>Zamanlayıcılar</h3>
           <p>Taban süre modele göre değişir (üst çubukta model seçimi). DVP-ES2'de T0–T126 ve T128–T199 100 ms, T127 1 ms, T200–T239 10 ms; T240–T255 birikimli: akım kesilince değer korunur, RST ile sıfırlanır. <code>TMR T0 K50</code> = 5 s. Normal zamanlayıcı, önündeki akım kesildiği anda sıfırlanır; süre dolunca T0 kontağı kapanır.</p>
+          <h3>Ana kontrol (MC / MCR)</h3>
+          <p><code>LD X0</code> + <code>MC N0</code> bir blok başlatır, tek başına yazılan <code>MCR N0</code> bitirir. X0 kapalıyken aradaki satırlara akım gitmez: OUT bobinleri düşer, normal zamanlayıcılar sıfırlanır, SET ile kurulanlar ve sayıcı değerleri olduğu gibi kalır; iç içe bloklarda dıştaki N0, içteki N1, N2… olur.</p>
           <h3>Veri komutları</h3>
           <ul>
             <li>D0, D1… 16 bit sayı tutar (−32768…32767). İzleme sekmesinde değerleri görünür; fonksiyon kutusunun altında canlı yazar.</li>

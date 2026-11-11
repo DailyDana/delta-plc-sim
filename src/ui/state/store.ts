@@ -63,7 +63,7 @@ export const DEFAULT_SETTINGS: Settings = {
 };
 
 /** Yapısı bozuk IL ladder'a çevrilmez (düzenleme satırı sessizce düşürmesin) */
-const STRUCTURAL = new Set(['E_UNKNOWN_OP', 'E_NEED_LOAD', 'E_OPEN_BLOCK', 'E_BLOCK_UNDERFLOW', 'E_MPS_UNDERFLOW', 'E_MPS_DEPTH']);
+const STRUCTURAL = new Set(['E_UNKNOWN_OP', 'E_UNSUPPORTED', 'E_NEED_LOAD', 'E_OPEN_BLOCK', 'E_BLOCK_UNDERFLOW', 'E_MPS_UNDERFLOW', 'E_MPS_DEPTH']);
 
 export interface Doc {
   il: string;

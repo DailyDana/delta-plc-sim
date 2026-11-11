@@ -3,7 +3,7 @@
 
 import { formatAddress, parseAddress, parseConstant, parseKn, type Address, type DevType, type WordRef } from './devices';
 import { diag, type Diagnostic } from './diagnostics';
-import { INSTRUCTIONS, MAX_MPS_DEPTH, type InstrDef } from './instructions';
+import { INSTRUCTIONS, MAX_MC_LEVEL, MAX_MPS_DEPTH, type InstrDef } from './instructions';
 import { counterRange, getProfile, type Profile } from './profiles';
 
 export interface Operand {
@@ -99,6 +99,11 @@ export function parseIl(text: string, profile: Profile = getProfile()): ParseRes
       diagnostics.push(diag('E_UNKNOWN_OP', `Bilinmeyen komut: ${tok[0]}`, { line }));
       continue;
     }
+    if (def.mc && profile.id === 'v1') {
+      // v1 motoru ana kontrolü bilmez: komut düşürülür, program çalışmaz (aşağıdaki tanılama engelleyicidir)
+      diagnostics.push(diag('E_UNSUPPORTED', `${mn}: v1 (sadeleştirilmiş) profilinde desteklenmiyor; MC/MCR için ES2, SS2 ya da EH3 modelini seç`, { line }));
+      continue;
+    }
     const args = tok.slice(1).filter(Boolean);
     const at = { line, instr: instrs.length };
     if (args.length < def.operands.length) {
@@ -180,6 +185,9 @@ export function exampleOf(def: InstrDef): string {
     case 'PLS':
     case 'PLF':
       return `${mn} M0`;
+    case 'MC':
+    case 'MCR':
+      return `${mn} N0`;
     default:
       return mn;
   }
@@ -291,6 +299,16 @@ function checkOperand(
     op.addr = a;
     op.raw = a.text;
     op.word = { k: 'dev', type: 'D', index: a.index };
+    return op;
+  }
+  if (kinds.includes('NL')) {
+    // Ana kontrol seviyesi: N0–N7 (s.3-10). 'N' sayı sabiti türünden ayrı tutulur.
+    const m = /^N(\d+)$/i.exec(raw);
+    if (!m) return bad('E_OPERAND_KIND', `${mn} ${op.raw}: seviye N0–N7 yazılır (ör. ${mn} N0)`);
+    const n = parseInt(m[1]!, 10);
+    op.raw = 'N' + n;
+    if (n > MAX_MC_LEVEL) return bad('E_MC_LEVEL', `${mn} N${n}: seviye N0–N7 olmalı (en çok 8 iç içe blok: dıştaki N0, içindeki N1, …)`);
+    op.k = n;
     return op;
   }
   if (kinds.includes('N')) {
@@ -430,7 +448,14 @@ export function analyze(program: IlProgram): { rungs: RungSpan[]; diagnostics: D
   let lastWasOutput = false;
   /** Bu satırda açık blok hatası bir kez söylendi mi */
   let openReported = false;
-  const coilRung = new Map<string, { rung: number; line: number }>();
+  /** Geçerli satır tek komutluk MCR satırı mı (ardından LD'siz komut gelemez) */
+  let mcrRung = false;
+  /** Geçerli satırdaki MC komutunun sırası (MC satırda tek çıkış olmalı); yoksa -1 */
+  let rungMcAt = -1;
+  /** Açık MC blokları (dıştan içe); block: çift bobin denetimi için blok kimliği */
+  const mcStack: { n: number; line: number; instr: number; block: number }[] = [];
+  let blockSeq = 0;
+  const coilRung = new Map<string, { rung: number; line: number; block: number }>();
   const srcText = (k: number): string => {
     const x = ins[k];
     return x ? [x.mn, ...x.ops.map((o) => o.raw)].join(' ').trim() : '?';
@@ -450,6 +475,16 @@ export function analyze(program: IlProgram): { rungs: RungSpan[]; diagnostics: D
     for (const k of mpsAt) {
       diagnostics.push(diag('W_MPS_UNCLOSED', 'MPS açıldı ama MPP ile kapatılmadı (son dal MPP ile başlamalı)', { line: ins[k]?.line ?? 0, instr: k, rung: ri }));
     }
+    if (rungMcAt >= 0 && outputs > 1) {
+      const mc = ins[rungMcAt]!;
+      diagnostics.push(
+        diag('E_MC_ALONE', `${srcText(rungMcAt)} satırda tek çıkış olmalı: aynı satırdaki diğer çıkışları ayrı satıra al (ör. "LD X0 / ${srcText(rungMcAt)}", altına yeni satır "LD X1 / OUT Y0")`, {
+          line: mc.line,
+          instr: rungMcAt,
+          rung: ri,
+        }),
+      );
+    }
     const span: RungSpan = { start, end };
     if (first?.comment) span.comment = first.comment;
     rungs.push(span);
@@ -467,6 +502,8 @@ export function analyze(program: IlProgram): { rungs: RungSpan[]; diagnostics: D
           mpsAt = [];
           outputs = 0;
           openReported = false;
+          mcrRung = false;
+          rungMcAt = -1;
           at.rung = rungs.length;
         } else {
           depth++;
@@ -490,7 +527,7 @@ export function analyze(program: IlProgram): { rungs: RungSpan[]; diagnostics: D
         break;
       case 'stack':
         if (it.mn === 'MPS') {
-          if (start < 0) diagnostics.push(diag('E_NEED_LOAD', 'MPS: önce LD ile başlamalı', at));
+          if (start < 0 || mcrRung) diagnostics.push(diag('E_NEED_LOAD', 'MPS: önce LD ile başlamalı', at));
           else if (depth !== 1 && !openReported) {
             diagnostics.push(diag('E_OPEN_BLOCK', openBlockMsg('MPS'), at));
             openReported = true;
@@ -503,7 +540,47 @@ export function analyze(program: IlProgram): { rungs: RungSpan[]; diagnostics: D
         lastWasOutput = false;
         break;
       case 'output': {
-        if (start < 0) diagnostics.push(diag('E_NEED_LOAD', `${it.mn}: önce LD ile başlamalı`, at));
+        const lv = it.ops[0]?.k;
+        if (it.def.mc === 'MCR') {
+          // MCR koşulsuz yazılır (s.3-10): önceki satırı kapatır, kendisi tek komutluk satırdır
+          if (start >= 0 && !lastWasOutput) {
+            diagnostics.push(
+              diag('E_MCR_COND', `MCR koşulsuz yazılır: önündeki koşulu sil (${ins[start]?.line}. satırdaki ${srcText(start)} ile başlayan kontaklar). ${srcText(i)} tek başına bir satırdır`, at),
+            );
+            outputs++;
+          } else {
+            close(i);
+            start = i;
+            depth = 0;
+            loads = [];
+            mpsAt = [];
+            outputs = 1;
+            openReported = false;
+            mcrRung = true;
+            rungMcAt = -1;
+            at.rung = rungs.length;
+          }
+          lastWasOutput = true;
+          if (lv !== undefined) {
+            let j = mcStack.length - 1;
+            while (j >= 0 && mcStack[j]!.n !== lv) j--;
+            if (j < 0) {
+              diagnostics.push(diag('E_MCR_NO_MC', `MCR N${lv} için önünde açık MC N${lv} yok: bloğun başına "LD X0 / MC N${lv}" yaz ya da bu MCR'yi sil`, at));
+            } else {
+              for (const e of mcStack.slice(j + 1)) {
+                diagnostics.push(
+                  diag('E_MC_NO_MCR', `MC N${e.n} bloğu kapatılmadan ${it.line}. satırda MCR N${lv} geldi: MCR N${lv}'den önce tek başına bir satır olarak "MCR N${e.n}" yaz`, {
+                    line: e.line,
+                    instr: e.instr,
+                  }),
+                );
+              }
+              mcStack.length = j;
+            }
+          }
+          break;
+        }
+        if (start < 0 || mcrRung) diagnostics.push(diag('E_NEED_LOAD', `${it.mn}: önce LD ile başlamalı`, at));
         else if (depth !== 1 && !openReported) {
           diagnostics.push(diag('E_OPEN_BLOCK', openBlockMsg(it.mn), at));
           openReported = true;
@@ -511,11 +588,31 @@ export function analyze(program: IlProgram): { rungs: RungSpan[]; diagnostics: D
         outputs++;
         lastWasOutput = true;
         const target = it.ops[0];
+        const block = mcStack.length ? mcStack[mcStack.length - 1]!.block : 0;
         if ((it.mn === 'OUT' || it.mn === 'TMR' || it.mn === 'CNT') && target?.addr) {
           const prev = coilRung.get(target.addr.text);
           if (prev !== undefined && prev.rung !== rungs.length) {
-            diagnostics.push(diag('W_DOUBLE_COIL', `${target.addr.text} birden çok satırda bobin olarak kullanılmış (çift bobin; ilk kullanım ${prev.line}. satırda): son yazan satır kazanır`, at));
-          } else if (prev === undefined) coilRung.set(target.addr.text, { rung: rungs.length, line: it.line });
+            // Farklı MC bloklarında kullanmak çift bobini çözmez: kapalı bloktaki bobin de her taramada 0 yazılır
+            const mcNote = prev.block !== block ? '; farklı MC bloklarında olması bunu değiştirmez, MC bloğu kapalıyken içindeki bobin de 0 yazılır' : '';
+            diagnostics.push(diag('W_DOUBLE_COIL', `${target.addr.text} birden çok satırda bobin olarak kullanılmış (çift bobin; ilk kullanım ${prev.line}. satırda): son yazan satır kazanır${mcNote}`, at));
+          } else if (prev === undefined) coilRung.set(target.addr.text, { rung: rungs.length, line: it.line, block });
+        }
+        if (it.def.mc === 'MC') {
+          rungMcAt = i;
+          if (lv !== undefined) {
+            const top = mcStack[mcStack.length - 1];
+            if (top && top.n >= lv) {
+              const hint = top.n < MAX_MC_LEVEL ? ` (burada N${top.n + 1} kullan)` : '';
+              diagnostics.push(
+                diag(
+                  'W_MC_ORDER',
+                  `MC N${lv} iç içe sırası bozuk: ${top.line}. satırdaki MC N${top.n} bloğunun içinde; içteki numara dıştakinden büyük olmalı${hint}. Yoksa MCR N${lv}, N${lv} ve üstü bütün blokları açar: dıştaki blok kapalıyken de sonraki satırlar çalışır`,
+                  at,
+                ),
+              );
+            }
+            mcStack.push({ n: lv, line: it.line, instr: i, block: ++blockSeq });
+          }
         }
         break;
       }
@@ -524,6 +621,9 @@ export function analyze(program: IlProgram): { rungs: RungSpan[]; diagnostics: D
     }
   });
   close(ins.length);
+  for (const e of mcStack) {
+    diagnostics.push(diag('E_MC_NO_MCR', `MC N${e.n} bloğunun sonu yok: bloğun bittiği yere tek başına bir satır olarak "MCR N${e.n}" yaz`, { line: e.line, instr: e.instr }));
+  }
   return { rungs, diagnostics };
 }
 

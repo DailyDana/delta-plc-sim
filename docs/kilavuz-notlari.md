@@ -63,9 +63,36 @@ Simülatörde uygulanan davranış ve dayanağı. "Çıkarım" yazanlar kılavuz
 | LD= … OR>= (D…) | S1 ? S2 karşılaştırma kontağı, işaretli; IL'de `LD= D0 K10` | 3-499…504 |
 | TMR / CNT | ayar K0–K32767 ya da D0–D9999 | 3-281…283 |
 | CNT | ayarda durur; MOV ile ayarın üstü yazılırsa sonraki kenarda ayara eşitlenir (v1 profilinde değil) | 2-26 |
+| MC / MCR | ana kontrol bloğu; aşağıdaki bölüm | 3-10, 3-11 |
+
+## Ana kontrol: MC Nn / MCR Nn (s.3-10, 3-11)
+Kılavuzda doğrulanan:
+- Yazım `LD X0` / `MC N0` … `MCR N0`; işlenen N0–N7. MC bir sürme koşulu ister; MCR'nin önünde sürme kontağı gerekmez
+  ("no drive contact is required before MCR").
+- MC etkin değilken MC–MCR arasındaki komutlar (tablo, s.3-10): genel zamanlayıcı ve altprogram zamanlayıcısı değer = 0,
+  bobin OFF; birikimli zamanlayıcı ve sayıcı bobin OFF, değer ve kontak korunur; OUT ile sürülen bobinler OFF; SET/RST ile
+  sürülenler olduğu gibi; uygulama komutları çalışmaz (FOR-NEXT yine döner; simülatörde FOR-NEXT yok).
+- En çok 8 seviye iç içe; N0'dan N7'ye sırayla kullanılır (s.3-11 not). Kılavuz örneğinde aynı N0 art arda bloklarda yeniden
+  kullanılıyor (`tests/mc.test.ts` kılavuz örneği).
+
+Simülatör uygulaması ve çıkarımlar:
+- Çıkarım (tablonun genellemesi): kapalı bölgedeki her çıkış sınıfı komut (OUT/SET/RST/TMR/CNT/PLS/PLF/uygulama komutları/iç
+  MC) "akım 0 gelmiş" gibi yürütülür; kontak türü fark etmez (LDI, INV, karşılaştırma kontağıyla sürülen OUT da 0). Tablodaki
+  her satır bu kuralla örtüşür (genel zamanlayıcı akımsız sıfırlanır, birikimli korur, sayıcı saymaz, SET/RST yazmaz).
+- VM: tarama başında bölge açıktır. `MC Nn` bölge açıkken koşulu 0 ise n seviyesinden itibaren kapatır; `MCR Nn`, kapalı
+  seviye ≥ n ise bölgeyi yeniden açar (n ve daha derin seviyeler). Sıra bozuksa (`MC N1` içinde `MC N0`) `MCR N0` dıştaki
+  bloğu da açar: simülatör bunu uyarıyla (`W_MC_ORDER`) çalıştırır. Çıkarım: kılavuz yalnızca "sırayla kullanın" diyor.
+- Çıkarım: kenar belleği kapalı bölgede de güncellenir. Koşulu zaten 1 olan LDP blok açılınca tetiklenmez; ama P'li komut
+  (INCP…), PLS ve CNT bobini kapalı bölgede akımı 0 gördüğü için blok açıldığında koşulu 1 ise bir kez tetiklenir. Aynı
+  nedenle PLF, blok kapanırken önceki akımı 1 ise bir darbe üretir. Kılavuzda bu ayrıntı yok.
+- Simülatör kararı: MC satırda tek çıkış olmalı (`E_MC_ALONE`); MCR tek başına bir satırdır, önünde kontak varsa `E_MCR_COND`.
+  Eşleşmeyen MC (`E_MC_NO_MCR`, MC'nin satırında), MC'siz MCR (`E_MCR_NO_MC`) ve N0–N7 dışı (`E_MC_LEVEL`) programı
+  engeller. İçteki MC kapanmadan dıştaki MCR gelirse içteki MC eşsiz sayılır.
+- Çift bobin farklı MC bloklarında da uyarılır: kapalı bloktaki OUT da her taramada 0 yazdığından son yazan kazanır kuralı
+  değişmez (kılavuz tablosundan çıkarım).
+- v1 profili MC/MCR desteklemez (`E_UNSUPPORTED`).
 
 ## Sonraki adım (Aşama 3b) için
-- MC N0–N7 / MCR: etkin değilken genel zamanlayıcı sıfırlanır, birikimli zamanlayıcı ve sayıcı korunur, OUT bobinleri OFF, SET/RST olduğu gibi, uygulama komutları çalışmaz; en çok 8 seviye (s.3-10/11).
 - CJ P0–P255: hedef etiket IL'de tek başına `P10` satırı; atlanan bölümde Y/M/S korunur, zamanlayıcılar durur (s.3-13, 3-41…44).
 - STL S / RET: SET Sn sonraki adıma geçer ve öncekinin çıkışları kapanır (SET ile kurulanlar kalır); OUT Sn sıçrama; S0–S9 başlangıç adımları; M1040 geçişi engeller (s.5-2…5-10).
 - SFTR/SFTL S D n1 n2: 1 ≤ n2 ≤ n1 ≤ 1024; genelde P biçimi (s.3-95/96).

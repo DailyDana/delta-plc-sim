@@ -40,11 +40,14 @@ Model: `--model ES2|SS2|EH3|v1` (varsayılan ES2). v1 profili yalnızca eski dav
 - Satır, bir çıkış komutundan sonra gelen ilk LD/LDI/LDP/LDF ile başlar.
 - Komutlar: LD/LDI/LDP/LDF, AND/ANI/ANDP/ANDF, OR/ORI/ORP/ORF, ANB, ORB, MPS/MRD/MPP (en çok 8 iç içe),
   OUT, SET, RST, TMR Tn Kn|Dn, CNT Cn Kn|Dn, PLS, PLF, INV, END, NOP.
+- Ana kontrol: `LD X0` / `MC N0` … `MCR N0` (N0–N7, iç içe bloklarda dıştaki N0, içteki N1…). MC satırda tek çıkış; MCR koşulsuz,
+  tek komutluk satır (önünde LD yok; ladder'da girişsiz satır, IL'e `LD M1000` yazılmaz). Kapalı bölgedeki çıkışlar akım 0 gibi
+  yürütülür; VM izi `mcClosed[]`, ekranda satır barası `<satır id>:rail` (power.ts `mcRailOf`). Testler: `tests/mc.test.ts`.
 - Uygulama komutları (Aşama 3a; P soneki darbe, D öneki 32 bit): MOV, CMP, ZCP, ADD, SUB, MUL, DIV, INC, DEC,
   WAND/WOR/WXOR (32 bit: DAND/DOR/DXOR), ZRST, ALT. Karşılaştırma kontakları: LD= LD> LD< LD<> LD<= LD>= ve AND…/OR…/D…
   Kelime işlenenleri: K10, H1F, D0, T0/C0 (değer), K1Y0 (Y0–Y3 bit grubu). Davranış ve sayfa numaraları: `docs/kilavuz-notlari.md`.
   Yeni komut eklerken: `instructions.ts` tablosu → `il.ts` işlenen denetimi → `vm.ts` `api()` → `tests/api.test.ts` (kılavuz örneğiyle).
-- MC/MCR, CJ/P, STL/RET, SFTL/SFTR, DCNT henüz yok (Aşama 3b).
+- CJ/P, STL/RET, SFTL/SFTR, DCNT henüz yok (Aşama 3b). MC/MCR var (v1 profili desteklemez).
 - Ladder'a çevrilemeyen ama çalışan kalıp: çıkıştan sonra OR (`L_OR_AFTER_OUTPUT`).
 - Örneklerin tek kaynağı `devreler/*.txt`. `examples.js` (v1, ilk `V1_COUNT` = 19) ve `src/core/examples.ts` (v2, hepsi) `node tools/ornekler.cjs` ile ÜRETİLİR; elle düzenleme (`tests/ornekler.test.ts` farkı yakalar).
   Yeni örnek: `devreler/NN-ad.txt` yaz (ilk yorum `; Dene: …`) → `kontrol` → `sim` ile yorumdaki davranışı doğrula → `tools/ornekler.cjs` listesinin SONUNA ekle (sıra değişirse `#ornek=N` bağlantıları kayar) → `npm run ornekler`.

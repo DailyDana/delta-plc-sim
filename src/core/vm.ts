@@ -12,12 +12,26 @@ import { counterRange, getProfile, isLatched, timerRange, type Profile } from '.
 export type ResetMode = 'power' | 'run';
 
 /** Bu tanılamalardan biri varsa program çalıştırılmaz (yapı bozuk ya da komut düşmüş) */
-const STRUCTURE_BLOCKING = ['E_UNKNOWN_OP', 'E_OPERAND_MISSING', 'E_NEED_LOAD', 'E_OPEN_BLOCK', 'E_BLOCK_UNDERFLOW', 'E_MPS_UNDERFLOW', 'E_MPS_DEPTH'];
+const STRUCTURE_BLOCKING = [
+  'E_UNKNOWN_OP',
+  'E_OPERAND_MISSING',
+  'E_NEED_LOAD',
+  'E_OPEN_BLOCK',
+  'E_BLOCK_UNDERFLOW',
+  'E_MPS_UNDERFLOW',
+  'E_MPS_DEPTH',
+  'E_UNSUPPORTED',
+  // ana kontrol: blok eşleşmesi bozuksa hangi satırın hangi bloğa ait olduğu belirsizdir
+  'E_MC_NO_MCR',
+  'E_MCR_NO_MC',
+  'E_MCR_COND',
+  'E_MC_ALONE',
+];
 /**
  * İşlenen aralığı/adres hataları da engeller: aksi hâlde geçersiz işlenen sessizce 0 sayılır
  * (ör. TMR T0 K40000 → K0 gibi davranır, çıkış ilk taramada ON). v1 profili eski davranışı korur (eşdeğerlik testi).
  */
-const OPERAND_BLOCKING = ['E_ADDR_FORMAT', 'E_ADDR_OCTAL', 'E_ADDR_RANGE', 'E_OPERAND_KIND', 'E_SPECIAL_READONLY', 'E_CONST_RANGE'];
+const OPERAND_BLOCKING = ['E_ADDR_FORMAT', 'E_ADDR_OCTAL', 'E_ADDR_RANGE', 'E_OPERAND_KIND', 'E_SPECIAL_READONLY', 'E_CONST_RANGE', 'E_MC_LEVEL'];
 const BLOCKING = new Set([...STRUCTURE_BLOCKING, ...OPERAND_BLOCKING]);
 const BLOCKING_V1 = new Set(STRUCTURE_BLOCKING);
 
@@ -43,7 +57,14 @@ interface Code {
   a: ({ type: DevType; index: number } | null)[];
   /** TMR/CNT ayar değeri D'den okunuyorsa o kaydedici, değilse -1 */
   kD: number;
+  /** Ana kontrol: 0 değil, 1 MC, 2 MCR */
+  mc: 0 | 1 | 2;
+  /** MC/MCR seviyesi (N0–N7) */
+  level: number;
 }
+
+/** "Kapalı seviye yok": ana kontrol bölgesi açık */
+const MC_OPEN = 99;
 
 export interface MachineOptions {
   profile?: string | Profile;
@@ -86,6 +107,11 @@ export class Machine {
   readonly accOut: Uint8Array;
   /** Kontak komutlarında kontağın kendisi kapalı mı (akımdan bağımsız) */
   readonly closed: Uint8Array;
+  /**
+   * Komut bu taramada MC ile kapatılmış bölgede mi yürütüldü (MC/MCR'de: komut çalışmadan önceki durum).
+   * Böyle bir çıkış komutu akım 0 gelmiş gibi yürütülür ve accIn/accOut izi 0 olur.
+   */
+  readonly mcClosed: Uint8Array;
 
   scanCount = 0;
   timeMs = 0;
@@ -141,6 +167,8 @@ export class Machine {
         w: it.ops.map((o) => (o.invalid ? null : o.word ?? null)),
         a: it.ops.map((o) => (o.invalid || !o.addr ? null : { type: o.addr.type, index: o.addr.index })),
         kD: kOp && !kOp.invalid && kOp.addr?.type === 'D' && (it.mn === 'TMR' || it.mn === 'CNT') ? kOp.addr.index : -1,
+        mc: it.def.mc === 'MC' ? 1 : it.def.mc === 'MCR' ? 2 : 0,
+        level: it.def.mc && op && !op.invalid && op.k !== undefined ? op.k : 0,
       };
     });
     const n = this.code.length;
@@ -152,6 +180,7 @@ export class Machine {
     this.accIn = new Uint8Array(n);
     this.accOut = new Uint8Array(n);
     this.closed = new Uint8Array(n);
+    this.mcClosed = new Uint8Array(n);
     this.bstack = new Uint8Array(n + 1);
     this.mstack = new Uint8Array(n + 1);
     // ayar değerleri baştan bilinsin (değer ekranında "0/50" görünsün)
@@ -182,7 +211,7 @@ export class Machine {
     const clear = (arr: { length: number; [i: number]: number }, type: DevType): void => {
       for (let i = 0; i < arr.length; i++) if (mode === 'power' || !isLatched(p, type, i)) arr[i] = 0;
     };
-    for (const a of [this.X, this.Y, this.coilPrev, this.accIn, this.accOut, this.closed, this.outputs]) a.fill(0);
+    for (const a of [this.X, this.Y, this.coilPrev, this.accIn, this.accOut, this.closed, this.mcClosed, this.outputs]) a.fill(0);
     clear(this.M, 'M');
     clear(this.S, 'S');
     clear(this.D, 'D');
@@ -322,6 +351,11 @@ export class Machine {
     let sp = 0;
     let mp = 0;
     let fresh = true;
+    /**
+     * Ana kontrol (s.3-10): kapalı seviye; MC_OPEN = bölge açık. MC Nn koşulu 0 ise (bölge zaten kapalı değilse)
+     * n seviyesinden itibaren kapanır; MCR Nn, kapalı seviye ≥ n ise bölgeyi yeniden açar. Tarama başında açık.
+     */
+    let off = MC_OPEN;
     for (let i = 0; i < code.length; i++) {
       const c = code[i]!;
       if (this.rungStart[i]) {
@@ -329,6 +363,8 @@ export class Machine {
         mp = 0;
         fresh = true;
       }
+      const shut = off !== MC_OPEN;
+      this.mcClosed[i] = shut ? 1 : 0;
       this.accIn[i] = acc;
       switch (c.cls) {
         case 'load': {
@@ -359,7 +395,21 @@ export class Machine {
           else acc = mp > 0 ? ms[--mp]! : 0;
           break;
         case 'output':
-          this.output(i, c, acc === 1, dt);
+          if (c.mc === 2) {
+            // MCR: koşulsuz; girdisi "bölge açık mı" (ekranda MCR satırının barası)
+            this.accIn[i] = shut ? 0 : 1;
+            if (shut && off >= c.level) off = MC_OPEN;
+            this.accOut[i] = this.accIn[i]!;
+            continue;
+          }
+          if (shut) this.accIn[i] = 0; // kapalı bölge: kontaklar ne olursa olsun akım 0 (OUT düşer, SET kalır…)
+          if (c.mc === 1) {
+            if (!shut && acc === 0) off = c.level;
+          } else this.output(i, c, !shut && acc === 1, dt);
+          if (shut) {
+            this.accOut[i] = 0;
+            continue;
+          }
           break;
         default:
           break;

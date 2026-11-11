@@ -2,7 +2,7 @@
 //   1 ├┬──┤ X0 ├──┬──┤/X1 ├────( Y0 )
 //     │└──┤ Y0 ├──┘
 
-import type { Contact, Ladder, OutBranch, Parallel, Series } from './ladder';
+import { isMcrRung, type Contact, type Ladder, type OutBranch, type Parallel, type Series } from './ladder';
 
 /** Kontak hücresindeki metin: "X0", karşılaştırmada "D0>=K10", INV için "INV" */
 const cText = (b: Contact): string => (b.kind === 'CMP' ? `${b.d32 ? 'D' : ''}${b.op}${b.cmp}${b.op2}` : b.kind === 'INV' ? 'INV' : b.op);
@@ -125,7 +125,7 @@ export function drawLadderText(l: Ladder): string {
     const h = Math.max(sh(r.input), oh(r.outputs));
     cv.put(0, y, String(ri + 1).padStart(3) + ' ├');
     for (let k = 1; k < h; k++) cv.put(4, y + k, '│');
-    if (r.input.length === 0) cv.put(X0, y, '──┤ M1000 ├──');
+    if (r.input.length === 0 && !isMcrRung(r)) cv.put(X0, y, '──┤ M1000 ├──');
     drawSeries(r.input, X0, y, sw(r.input));
     drawOuts(r.outputs, X0 + sw(r.input), y);
     y += h;

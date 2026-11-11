@@ -1,0 +1,40 @@
+#X0 ana şalter
+#X1 motor 1 start
+#X2 motor 1 stop
+#X3 motor 2 start
+#X4 motor 2 stop
+#X5 lamba sıfırla
+#Y0 motor 1
+#Y1 motor 2
+#Y2 çalıştı lambası
+#Y3 3 s uyarısı
+; Dene: X0'ı kilitle (ana şalter açık). X1 motor 1'i, X3 motor 2'yi çalıştırır; X2 ve X4 durdurur. Motor 1 kalkınca Y2 yanar, 3 s sonra Y3
+; Motorlar çalışırken X0'ı bırak: Y0, Y1 ve Y3 söner, T0 sıfırlanır, SET ile yanan Y2 kalır (baranın yanındaki N0 çizgisi söner)
+; X0'ı yeniden kilitle: motorlar kendiliğinden kalkmaz, yeniden start iste. X5 Y2'yi söndürür
+; Ana şalter: X0 kapalıyken MC ile MCR arasındaki satırlara akım gitmez
+LD X0
+MC N0
+; Motor 1 mühürleme
+LD X1
+OR Y0
+ANI X2
+OUT Y0
+; Motor 2 mühürleme
+LD X3
+OR Y1
+ANI X4
+OUT Y1
+; Motor 1 kalkınca lamba kurulur (SET: ana şalter kapanınca da yanık kalır)
+LD Y0
+SET Y2
+; Motor 1 3 s çalışınca uyarı (genel zamanlayıcı: ana şalter kapanınca sıfırlanır)
+LD Y0
+TMR T0 K30
+LD T0
+OUT Y3
+; Blok sonu: buradan sonrası ana şaltere bağlı değil
+MCR N0
+; Lamba sıfırlama
+LD X5
+RST Y2
+END

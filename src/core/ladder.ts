@@ -37,7 +37,7 @@ export interface Coil {
   args?: string[];
 }
 
-/** Bobin yalnızca temel bobin mi (OUT/SET/…); değilse uygulama komutu kutusu */
+/** Bobin yalnızca temel bobin mi (OUT/SET/…); değilse uygulama komutu ya da MC/MCR kutusu */
 export const isBasicCoil = (c: Coil): boolean => isCoilType(c.type);
 
 /** Çıkış dalı: ya bir bobinle biter ya da alt dallara ayrılır (iç içe MPS) */
@@ -59,6 +59,20 @@ export interface Ladder {
   rungs: Rung[];
   labels: Record<string, string>;
 }
+
+/**
+ * Tek başına MCR satırı: girişsiz, tek çıkışı MCR. MCR koşulsuz yazılır (s.3-10); IL'e önüne
+ * LD M1000 yazılmaz ve düzenleyici girişine kontak koydurmaz.
+ */
+export const isMcrRung = (r: Rung): boolean => {
+  const o = r.outputs[0];
+  return r.input.length === 0 && r.outputs.length === 1 && !!o && o.pre.length === 0 && !o.children && o.coil?.type === 'MCR';
+};
+/** Satırın çıkışı MC ise o bobin (MC satırda tek çıkıştır) */
+export const mcCoilOf = (r: Rung): Coil | null => {
+  const o = r.outputs[0];
+  return r.outputs.length === 1 && o && !o.children && o.coil?.type === 'MC' ? o.coil : null;
+};
 
 let uid = 1;
 const nid = (): string => 'n' + uid++;
@@ -182,7 +196,9 @@ export function ladderToIlMapped(l: Ladder): { text: string; refs: (string | und
   l.rungs.forEach((r, i) => {
     if (r.comment) r.comment.split('\n').forEach((c) => out.push('; ' + c));
     else out.push(`; --- satır ${i + 1}`);
-    if (r.input.length === 0) out.push('LD M1000');
+    if (isMcrRung(r)) {
+      // MCR koşulsuzdur: yükleme komutu yok
+    } else if (r.input.length === 0) out.push('LD M1000');
     else genSeries(r.input, out, 'load');
     genOutputs(r.outputs, out);
   });
@@ -218,6 +234,7 @@ function contactOf(it: IlProgram['instrs'][number]): Contact {
 /** IL çıkış komutundan bobin / fonksiyon kutusu */
 function coilOf(it: IlProgram['instrs'][number]): Coil {
   const op = it.ops[0]?.raw ?? '?';
+  if (it.def.mc) return { type: it.mn, op, k: '' };
   if (isCoilType(it.mn)) {
     const k = it.ops[1];
     const kText = !k ? '' : k.addr ? k.addr.text : k.k !== undefined ? String(k.k) : k.raw;
@@ -264,6 +281,14 @@ export function ilToLadder(program: IlProgram): { ladder: Ladder | null; diagnos
   const rungs: Rung[] = [];
 
   for (const [ri, span] of spans.entries()) {
+    const only = span.end - span.start === 1 ? program.instrs[span.start] : undefined;
+    if (only?.def.mc === 'MCR') {
+      // Tek başına MCR satırı: girişsiz, tek çıkış
+      const br = coilBranch([], coilOf(only));
+      map.set(br.id, span.start);
+      rungs.push(rung([], [br], only.comment ?? ''));
+      continue;
+    }
     let stack: Series[] = [];
     let phaseB = false;
     let input: Series = [];

@@ -3,7 +3,7 @@
 
 import { contact, parallel, rung as mkRung, type Block, type Coil, type Contact, type Ladder, type OutBranch, type Parallel, type Rung, type Series } from '../../core/ladder';
 import { isOctalType, parseAddress } from '../../core/devices';
-import { API_BASES, apiMnemonic, INSTRUCTIONS, isCoilType, type CmpOp, type CoilType, type ContactKind } from '../../core/instructions';
+import { API_BASES, apiMnemonic, INSTRUCTIONS, isCoilType, isMcType, MAX_MC_LEVEL, type CmpOp, type CoilType, type ContactKind } from '../../core/instructions';
 
 let seq = 1;
 const nid = (): string => 'u' + Date.now().toString(36) + (seq++).toString(36);
@@ -222,6 +222,91 @@ export function nextFree(l: Ladder, d: 'Y' | 'M' | 'T' | 'C'): string {
   return d + '0';
 }
 
+// ------------------------------------------------------------------ ana kontrol (MC/MCR) satırları
+// MC satırda tek çıkıştır, MCR girişsiz tek komutluk satırdır. Düzenleme bu satırlara başka çıkış ya da
+// (MCR'ye) kontak koymaz; MC/MCR eklemek her zaman yeni bir satır açar. Kaçanı tanılama yakalar.
+
+/** Satırın MC/MCR satırı olup olmadığı (çıkışlarından biri MC ya da MCR ise o tür) */
+export function rungMc(r: Rung): 'MC' | 'MCR' | null {
+  let found: 'MC' | 'MCR' | null = null;
+  const walk = (list: OutBranch[]) =>
+    list.forEach((o) => {
+      if (o.coil && isMcType(o.coil.type)) found = o.coil.type;
+      if (o.children) walk(o.children);
+    });
+  walk(r.outputs);
+  return found;
+}
+
+const REFUSE_MCR_CONTACT = 'MCR koşulsuz yazılır: önüne kontak konmaz (blok sonu tek başına bir satırdır)';
+const REFUSE_MC_OUTPUT = 'MC ve MCR satırda tek başına durur; başka çıkış için altına yeni satır ekle';
+
+const REFUSE_MC_DUP = 'MC/MCR satırı tek başına çoğaltılamaz: blok başı ile sonu eşleşmeli (yeni blok için panodan MC ve MCR ekle)';
+
+/** MC/MCR satırının seviyesi (N0 → 0); okunamazsa null */
+function mcLevelOf(r: Rung, k: 'MC' | 'MCR'): number | null {
+  const c = r.outputs.find((o) => o.coil && o.coil.type === k)?.coil;
+  const n = parseInt((c?.op ?? '').replace(/^N/i, ''), 10);
+  return Number.isNaN(n) ? null : n;
+}
+
+/** Eşleşen MC ↔ MCR satırları (iki yönlü: satır sırası → eşinin sırası) */
+export function mcPairs(l: Ladder): Map<number, number> {
+  const pairs = new Map<number, number>();
+  const open: { n: number; ri: number }[] = [];
+  l.rungs.forEach((r, ri) => {
+    const k = rungMc(r);
+    const n = k ? mcLevelOf(r, k) : null;
+    if (!k || n === null) return;
+    if (k === 'MC') open.push({ n, ri });
+    else {
+      let j = open.length - 1;
+      while (j >= 0 && open[j]!.n !== n) j--;
+      if (j < 0) return;
+      pairs.set(open[j]!.ri, ri);
+      pairs.set(ri, open[j]!.ri);
+      open.length = j;
+    }
+  });
+  return pairs;
+}
+
+/** Satırın önündeki (0…ri-1) açık MC seviyeleri, dıştan içe */
+export function openMcLevels(l: Ladder, ri: number): number[] {
+  const open: number[] = [];
+  for (let i = 0; i < Math.min(ri, l.rungs.length); i++) {
+    const r = l.rungs[i]!;
+    const k = rungMc(r);
+    if (!k) continue;
+    const c = r.outputs.find((o) => o.coil && o.coil.type === k)?.coil;
+    const n = parseInt((c?.op ?? '').replace(/^N/i, ''), 10);
+    if (Number.isNaN(n)) continue;
+    if (k === 'MC') open.push(n);
+    else {
+      const j = open.lastIndexOf(n);
+      if (j >= 0) open.length = j;
+    }
+  }
+  return open;
+}
+
+/** MC ya da MCR satırı kur: seviye verilmezse konumdan (MC: içteki bloğun bir fazlası, MCR: içteki açık blok) */
+export function mcRung(l: Ladder, type: 'MC' | 'MCR', at: number, level?: string): Rung {
+  const open = openMcLevels(l, at);
+  const top = open[open.length - 1];
+  const n = type === 'MC' ? (top === undefined ? 0 : Math.min(MAX_MC_LEVEL, top + 1)) : top ?? 0;
+  const coil: Coil = { type, op: level ?? 'N' + n, k: '' };
+  return { id: nid(), comment: '', input: type === 'MC' ? [newContact('NO', 'X0')] : [], outputs: [newCoilBranch(coil)] };
+}
+
+/** Yeni MC/MCR satırını seçili satırın altına (seçim yoksa en alta) ekle */
+export function insertMcRung(l: Ladder, ri: number | null, type: 'MC' | 'MCR', level?: string): EditResult {
+  const at = ri === null ? l.rungs.length : ri + 1;
+  const r = mcRung(l, type, at, level);
+  l.rungs.splice(at, 0, r);
+  return { sel: r.outputs[0]!.id };
+}
+
 export function makeCoil(l: Ladder, type: string): Coil {
   const api = API_DEFAULTS[type] ?? (INSTRUCTIONS[type]?.base ? { mn: type, ops: API_DEFAULTS[INSTRUCTIONS[type]!.base!]?.ops ?? [] } : null);
   if (api) return { type: api.mn, op: api.ops[0] ?? '', k: '', args: api.ops.slice(1) };
@@ -230,6 +315,9 @@ export function makeCoil(l: Ladder, type: string): Coil {
     case 'CNT': return { type, op: nextFree(l, 'C'), k: '5' };
     case 'OUT': return { type, op: nextFree(l, 'Y'), k: '' };
     case 'RST': return { type, op: 'M0', k: '' };
+    case 'MC':
+    case 'MCR':
+      return { type, op: 'N0', k: '' };
     default: return { type, op: 'M0', k: '' };
   }
 }
@@ -259,6 +347,14 @@ export function apply(l: Ladder, id: string | null, act: Action): EditResult {
   const loc = locate(l, id);
   if (!loc) return { sel: id, refuse: 'Önce ladder\'da bir öğe seç' };
   let sel: string | null = id;
+  const mcKind = rungMc(loc.r);
+  const mcOut = loc.kind === 'output' && !!loc.o.coil && isMcType(loc.o.coil.type);
+  if (mcKind === 'MCR' && (act === 'addLeft' || act === 'addRight' || act === 'addBranchContact')) return { sel, refuse: REFUSE_MCR_CONTACT };
+  if (mcKind && act === 'addOutput') return { sel, refuse: REFUSE_MC_OUTPUT };
+  // MC/MCR satırın kendisidir: silmek/çoğaltmak satır işlemidir
+  if (mcOut && (act === 'delete' || act === 'duplicate')) return apply(l, loc.r.id, act);
+  // Tek başına çoğaltılan MC ya da MCR eşsiz kalır (engelleyici hata); blok başı ve sonu birlikte eklenir
+  if (loc.kind === 'rung' && mcKind && act === 'duplicate') return { sel, refuse: REFUSE_MC_DUP };
   switch (act) {
     case 'addLeft':
     case 'addRight': {
@@ -313,8 +409,12 @@ export function apply(l: Ladder, id: string | null, act: Action): EditResult {
         loc.list.splice(loc.oi, 1);
         sel = loc.r.id;
       } else {
+        // MC ya da MCR satırı silinince bloğun öbür ucu da silinir (içindeki satırlar kalır, blok kalkar)
+        const pair = mcKind ? mcPairs(l).get(loc.ri) : undefined;
         l.rungs.splice(loc.ri, 1);
-        const nr = l.rungs[Math.min(loc.ri, l.rungs.length - 1)];
+        if (pair !== undefined) l.rungs.splice(pair > loc.ri ? pair - 1 : pair, 1);
+        const at = Math.min(loc.ri, pair ?? loc.ri);
+        const nr = l.rungs[Math.min(at, l.rungs.length - 1)];
         sel = nr ? nr.id : null;
       }
       break;
@@ -453,7 +553,19 @@ export type DragPayload =
   | { src: 'ladder'; id: string; g: 'c' | 'o' };
 
 /** Bu nokta bu parçayı kabul eder mi? */
+/** Taşınan/eklenen parça MC ya da MCR mi (bunlar yalnızca yeni satır olarak bırakılır) */
+function mcPayload(l: Ladder, p: DragPayload): 'MC' | 'MCR' | null {
+  if (p.src === 'palette') return p.g === 'o' && isMcType(p.k) ? p.k : null;
+  const loc = locate(l, p.id);
+  return loc?.kind === 'output' && loc.o.coil && isMcType(loc.o.coil.type) ? loc.o.coil.type : null;
+}
+
 export function slotAccepts(l: Ladder, s: Slot, p: DragPayload): boolean {
+  if (mcPayload(l, p)) return s.t === 'r';
+  if (s.t === 'o') {
+    const r = l.rungs.find((x) => x.id === s.rungId);
+    if (r && rungMc(r)) return false; // MC/MCR satırına ikinci çıkış konmaz
+  }
   if (p.g === 'c') {
     if (s.t === 'o') return false;
     if (p.src === 'ladder' && s.t === 'p' && s.id === p.id) return false;
@@ -489,6 +601,27 @@ export function slotLabel(s: Slot, p: DragPayload, copy: boolean, rungCount: num
 /** Bırakmayı uygula: önce yeni düğüm yerine konur, sonra (taşımada) eskisi silinir. */
 export function drop(l: Ladder, p: DragPayload, s: Slot, copy: boolean): EditResult {
   const moving = p.src === 'ladder' && !copy;
+  const mc = mcPayload(l, p);
+  if (mc) {
+    // MC/MCR satırın kendisidir: yeni satır olarak eklenir; ladder'dan taşımada bütün satır taşınır/kopyalanır
+    if (s.t !== 'r') return { sel: null, refuse: REFUSE_MC_OUTPUT };
+    if (p.src === 'palette') {
+      const r = mcRung(l, mc, s.index);
+      l.rungs.splice(s.index, 0, r);
+      return { sel: r.outputs[0]!.id };
+    }
+    const loc = locate(l, p.id) as OutputLoc;
+    const src = loc.r;
+    const r: Rung = moving ? src : { id: nid(), comment: src.comment, input: copySeries(src.input), outputs: src.outputs.map(copyBranch) };
+    let at = s.index;
+    if (moving) {
+      const from = l.rungs.indexOf(src);
+      l.rungs.splice(from, 1);
+      if (from < at) at--;
+    }
+    l.rungs.splice(at, 0, r);
+    return { sel: moving ? p.id : r.outputs[0]!.id };
+  }
   let node: Contact | OutBranch;
   let g: 'c' | 'o';
   if (p.src === 'palette') {
@@ -545,6 +678,10 @@ export function drop(l: Ladder, p: DragPayload, s: Slot, copy: boolean): EditRes
 /** Panodaki parçaya tıklama: seçili öğenin yanına ekle */
 export function insertPart(l: Ladder, selId: string | null, p: Extract<DragPayload, { src: 'palette' }>): EditResult {
   const loc = locate(l, selId);
+  if (p.g === 'o' && isMcType(p.k)) return insertMcRung(l, loc ? loc.ri : null, p.k);
+  const mcKind = loc ? rungMc(loc.r) : null;
+  if (p.g === 'c' && mcKind === 'MCR') return { sel: selId, refuse: REFUSE_MCR_CONTACT };
+  if (p.g === 'o' && mcKind) return { sel: selId, refuse: REFUSE_MC_OUTPUT };
   if (p.g === 'c') {
     const c = paletteContact(p.k);
     if (!loc) l.rungs.push({ id: nid(), comment: '', input: [c], outputs: [newCoilBranch(makeCoil(l, 'OUT'))] });
@@ -584,9 +721,11 @@ export function pasteClip(l: Ladder, sel: string | null, clip: Clip): EditResult
     l.rungs.splice(loc ? loc.ri + 1 : l.rungs.length, 0, r);
     return { sel: r.id };
   }
+  const mcKind = loc ? rungMc(loc.r) : null;
   if (clip.k === 'contact') {
     const c: Contact = { ...clip.c, id: nid() };
     if (!loc) return { sel, refuse: 'Kontağı yapıştırmak için bir satır ya da kontak seç' };
+    if (mcKind === 'MCR') return { sel, refuse: REFUSE_MCR_CONTACT };
     if (loc.kind === 'contact') loc.series.splice(loc.index + 1, 0, c);
     else if (loc.kind === 'output') loc.o.pre.push(c);
     else loc.r.input.push(c);
@@ -594,6 +733,9 @@ export function pasteClip(l: Ladder, sel: string | null, clip: Clip): EditResult
     return { sel: c.id };
   }
   if (!loc) return { sel, refuse: 'Çıkışı yapıştırmak için bir satır ya da çıkış seç' };
+  const cc = clip.o.coil;
+  if (cc && isMcType(cc.type)) return insertMcRung(l, loc.ri, cc.type, cc.op);
+  if (mcKind) return { sel, refuse: REFUSE_MC_OUTPUT };
   const o = copyBranch(clip.o);
   if (loc.kind === 'output') loc.list.splice(loc.oi + 1, 0, o);
   else loc.r.outputs.push(o);

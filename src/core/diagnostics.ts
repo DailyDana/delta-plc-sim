@@ -35,6 +35,13 @@ export type DiagCode =
   | 'W_COUNTER_32'
   | 'W_AFTER_END'
   | 'W_NO_END'
+  | 'E_UNSUPPORTED'
+  | 'E_MC_LEVEL'
+  | 'E_MC_NO_MCR'
+  | 'E_MCR_NO_MC'
+  | 'E_MCR_COND'
+  | 'E_MC_ALONE'
+  | 'W_MC_ORDER'
   | 'L_OR_AFTER_OUTPUT'
   | 'L_UNSUPPORTED';
 

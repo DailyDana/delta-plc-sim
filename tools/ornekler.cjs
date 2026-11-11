@@ -38,6 +38,7 @@ const LIST = [
   ['24-iki-zamanlayicili-flasor', 'İki zamanlayıcılı flaşör'],
   ['25-kenar-algilama-ldp-ldf', 'Kenar algılama (LDP / LDF)'],
   ['26-tank-iki-seviye-sensoru', 'Tank: iki seviye sensörüyle pompa'],
+  ['27-ana-salter-mc-mcr', 'Ana şalter (MC / MCR)'],
 ];
 
 const items = LIST.map(([file, name]) => ({

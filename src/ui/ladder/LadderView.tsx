@@ -11,7 +11,7 @@ import { engine } from '../sim/engine';
 import { useFrame } from '../sim/useLive';
 import { beginPointer, clickSuppressed, registerTarget, useDrag, useEraser } from './drag';
 import { COILW, CW, LEFT, RH, layout, type Scene } from './layout';
-import { computePower } from './power';
+import { computePower, mcRailOf } from './power';
 import { applyQuick, parseQuick } from './quick';
 
 /** Uygulama içi pano (sekmeler arası da geçerli) */
@@ -57,7 +57,7 @@ const SceneSvg = memo(function SceneSvg({ sc, ladder, sel, model }: SvgProps) {
             <title>{`Satır ${r.ri + 1}: tıkla, satır işlemleri`}</title>
           </text>
           {r.comment && (
-            <text className="rcom" x={LEFT + 8} y={r.y + 15}>
+            <text className="rcom" x={LEFT + 8 + (r.mc ? Math.min(r.mc, 4) * 6 + 6 : 0)} y={r.y + 15}>
               {trunc(r.comment.split('\n')[0]!, 90)}
             </text>
           )}
@@ -144,6 +144,8 @@ const SceneSvg = memo(function SceneSvg({ sc, ladder, sel, model }: SvgProps) {
         const isOut = c.type === 'OUT';
         const m = x + COILW / 2;
         const tc = (c.type === 'TMR' || c.type === 'CNT') && parseAddress(c.op).addr;
+        // MC/MCR kutusunun altında ne yaptığı (öğrenme için)
+        const mcCap = c.type === 'MC' ? `${c.op || '?'} bloğu başlar` : c.type === 'MCR' ? `${c.op || '?'} bloğu biter` : '';
         return (
           <g key={o.id}>
             {isOut ? (
@@ -174,6 +176,11 @@ const SceneSvg = memo(function SceneSvg({ sc, ladder, sel, model }: SvgProps) {
                 </text>
                 <line className="w off" x1={x + COILW - 6} y1={cy} x2={sc.rightX} y2={cy} />
                 {regs.length > 0 && <text className="tv" data-wv={regs.join(' ')} x={m} y={cy + 29} textAnchor="middle" />}
+                {mcCap && (
+                  <text className="lbl" x={m} y={cy + 29} textAnchor="middle">
+                    {mcCap}
+                  </text>
+                )}
                 {tc && (
                   <>
                     <rect className="tvbar" x={x + 14} y={cy + 17} width={COILW - 28} height={3} rx={1.5} />
@@ -194,6 +201,15 @@ const SceneSvg = memo(function SceneSvg({ sc, ladder, sel, model }: SvgProps) {
           </g>
         );
       })}
+      {sc.mcBlocks.map((b, i) => (
+        <g key={'mc' + i} className="mcblk">
+          <path className="mcrail" data-pw={b.pw} d={`M${b.x + 5} ${b.y1}H${b.x}V${b.y2}H${b.x + 5}`} />
+          <text className="mclvl" data-pw={b.pw} x={LEFT - 5} y={b.y1 + 9} textAnchor="end">
+            {b.level}
+          </text>
+          <title>{`${b.level} bloğu: satır ${b.from + 1}–${b.to + 1}. MC koşulu 0 iken bu satırlar akımsız çalışır (yeşil: blok açık)`}</title>
+        </g>
+      ))}
       <line className="rail" data-pw="1" x1={LEFT} y1={4} x2={LEFT} y2={sc.bottomY} />
       <line className="rail" x1={sc.rightX} y1={4} x2={sc.rightX} y2={sc.bottomY} />
       <g className="addrow" data-add="1">
@@ -304,7 +320,9 @@ export function LadderView() {
         }
         return loc.node.kind === 'NO' ? b : loc.node.kind === 'NC' ? !b : false;
       };
-      const pm = computePower(ladder, closedOf);
+      // MC ile kapatılmış bölgedeki satırların barası enerjisiz (VM izi); iz yoksa bara hep enerjili sayılır
+      const railOf = m.traced && !engine.stale && m.mcClosed.length === m.program.instrs.length ? mcRailOf(instrOf, m.mcClosed) : undefined;
+      const pm = computePower(ladder, closedOf, railOf);
       for (const el of e.pw) el.classList.toggle('on', !!pm.get(el.dataset.pw!));
       for (const el of e.cl) el.classList.toggle('on', !!pm.get(el.dataset.cl + ':closed'));
       for (const el of e.q) el.classList.toggle('on', !!pm.get(el.dataset.q + ':q'));
