@@ -6,6 +6,8 @@ import { useStore } from './state/store';
 import { engine, SCAN_MS } from './sim/engine';
 import { recorder } from './sim/recording';
 import { useTiming } from './timing/selection';
+import { exerciseIdFromHash } from './exercise/progress';
+import { EXERCISE_LIST, activeExerciseId, checkActive, openExercise, useExercises } from './exercise/store';
 
 export interface PlcApi {
   load(il: string, name?: string): { ok: boolean; errors: Diagnostic[]; warnings: Diagnostic[]; rungs: number };
@@ -27,6 +29,14 @@ export interface PlcApi {
    * devs verilirse yalnızca o anahtarlar ("Y0", "T0", "T0.v", "D0").
    */
   trace(devs?: string[]): Trace;
+  /** Alıştırma listesi (referans çözüm içermez) */
+  exercises(): { id: string; title: string; level: number; solved: boolean }[];
+  /** Alıştırmayı aç (açıksa o sekmeye geç) */
+  openExercise(id: string): { ok: boolean; id: string | null; il: string };
+  /** Etkin alıştırma sekmesini denetle; sonuç görev panelinde de görünür */
+  checkExercise(): { ok: boolean; passed: boolean; blocked: boolean; message: string; scenarios: { name: string; passed: boolean; message: string | null }[] } | { ok: false; error: string };
+  /** İlerleme: çözülenler, öğrencinin son IL'leri, açılan ipucu sayıları */
+  exerciseProgress(): { solved: string[]; il: Record<string, string>; hints: Record<string, number> };
 }
 
 function xIndex(x: string): number {
@@ -116,6 +126,25 @@ export const api: PlcApi = {
     }
     return tr;
   },
+  exercises() {
+    const solved = useExercises.getState().progress.solved;
+    return EXERCISE_LIST.map((e) => ({ id: e.id, title: e.title, level: e.level, solved: !!solved[e.id] }));
+  },
+  openExercise(id) {
+    const ok = openExercise(String(id));
+    return { ok, id: activeExerciseId(), il: useStore.getState().doc.il };
+  },
+  checkExercise() {
+    const e = checkActive();
+    if (!e) return { ok: false, error: 'Etkin sekme bir alıştırma değil' };
+    const r = e.result;
+    // yalnızca düz alanlar: izler (referansınki dahil) dışarı verilmez
+    return { ok: true, passed: r.passed, blocked: r.blocked, message: r.message, scenarios: r.scenarios.map((s) => ({ name: s.name, passed: s.passed, message: s.message ?? null })) };
+  },
+  exerciseProgress() {
+    const p = useExercises.getState().progress;
+    return { solved: Object.keys(p.solved), il: { ...p.il }, hints: { ...p.hints } };
+  },
 };
 
 // zaman diyagramı seçim kaydı modül yüklenince bağlanır (kayıt seçimdeki ek cihazları da tutsun)
@@ -125,6 +154,12 @@ void useTiming;
 export function openFromHash(): void {
   const h = location.hash.replace(/^#/, '');
   if (!h) return;
+  const exId = exerciseIdFromHash(h);
+  if (exId) {
+    history.replaceState(null, '', location.pathname + location.search);
+    openExercise(exId);
+    return;
+  }
   const p = new URLSearchParams(h);
   let il: string | null = null;
   let name = p.get('ad') ?? '';

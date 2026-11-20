@@ -121,5 +121,5 @@ describe('kaskad çıkış gidiş-dönüşü davranışı korur', () => {
       powerMatches(once, n + 900);
       expect(roundTrip(once), src).toBe(once);
     }
-  });
+  }, 120000); // 300 program × 3 denetim: tam takım paralel koşarken varsayılan 5 s yetmiyor
 });

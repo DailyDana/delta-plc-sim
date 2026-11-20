@@ -15,6 +15,7 @@ import { CommandPalette, HelpModal, Toast } from './components/Overlays';
 import { saveCurrent } from './components/fileops';
 import { PartIcon } from './components/symbols';
 import { useDrag } from './ladder/drag';
+import { ExercisePanel } from './exercise/ExercisePanel';
 
 function Splitter({ dir, onDrag }: { dir: 'v' | 'h'; onDrag: (d: number) => void }) {
   const [on, setOn] = useState(false);
@@ -179,6 +180,8 @@ function StorageBanner() {
 
 export function App() {
   const st = useStore((s) => s.settings);
+  const isEx = useStore((s) => !!s.tabs[s.active]?.exercise);
+  const hasSel = useStore((s) => s.sel !== null);
   const set = useStore.getState().set;
   const migrated = useStore((s) => s.migrated);
   const work = useRef<HTMLDivElement>(null);
@@ -228,10 +231,14 @@ export function App() {
           )}
         </main>
         <Splitter dir="v" onDrag={(d) => set('rightW', clamp(useStore.getState().settings.rightW - d, 240, 460))} />
-        <aside className="side right" aria-label="Özellikler ve G/Ç">
-          <div className="pbody" style={{ flex: 'none', maxHeight: '55%', borderBottom: '1px solid var(--line)' }}>
-            <PropsPanel />
-          </div>
+        <aside className={'side right' + (isEx ? ' has-ex' : '')} aria-label="Özellikler ve G/Ç">
+          {isEx && <ExercisePanel />}
+          {/* alıştırmada görev paneline yer kalsın: özellikler yalnızca bir öğe seçiliyken */}
+          {(!isEx || hasSel) && (
+            <div className="pbody" style={{ flex: 'none', maxHeight: isEx ? '34%' : '55%', borderBottom: '1px solid var(--line)' }}>
+              <PropsPanel />
+            </div>
+          )}
           <div style={{ overflow: 'auto', flex: 1, minHeight: 0 }}>
             <IoPanel />
           </div>

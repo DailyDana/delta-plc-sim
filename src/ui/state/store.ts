@@ -23,8 +23,8 @@ import { engine } from '../sim/engine';
 import { loadAll, loadSettings, newId, saveLib, saveSettings, saveTabs, storage, type Library, type TabData } from './persist';
 
 export type Theme = 'light' | 'dark';
-export type BottomTab = 'il' | 'watch' | 'problems' | 'timing';
-export type LeftTab = 'parts' | 'project';
+export type BottomTab = 'il' | 'watch' | 'problems' | 'timing' | 'exercise';
+export type LeftTab = 'parts' | 'project' | 'exercises';
 
 export interface Settings {
   theme: Theme;
@@ -135,7 +135,8 @@ export interface State {
   libOpen: boolean;
 
   // düzenleme
-  setIlText(text: string): void;
+  /** `coalesce` (varsayılan açık): 1 s içindeki yazma adımları tek geri alma adımı olur */
+  setIlText(text: string, coalesce?: boolean): void;
   applyLadder(l: Ladder, sel?: string | null, coalesce?: boolean): void;
   editLadder(fn: (l: Ladder) => string | null | void | { sel: string | null; refuse?: string }, coalesce?: boolean): void;
   select(id: string | null): void;
@@ -143,7 +144,8 @@ export interface State {
   redo(): void;
   // sekmeler
   switchTab(i: number): void;
-  openInNewTab(name: string, il: string, savedAs?: string | null): void;
+  /** `extra`: sekmeye eklenecek alanlar (ör. alıştırma kimliği) */
+  openInNewTab(name: string, il: string, savedAs?: string | null, extra?: Pick<TabData, 'exercise'>): void;
   newBlankTab(): void;
   removeTab(i: number): void;
   renameTab(i: number, name: string): void;
@@ -230,10 +232,10 @@ export const useStore = create<State>()((set, get) => {
     helpOpen: false,
     libOpen: false,
 
-    setIlText(text) {
+    setIlText(text, coalesce = true) {
       const doc = deriveDoc(text, get().settings.model);
       const sel = doc.ladder && get().sel ? null : get().sel;
-      commitIl(text, doc, sel, true);
+      commitIl(text, doc, sel, coalesce);
     },
 
     applyLadder(l, sel = get().sel, coalesce = false) {
@@ -298,9 +300,9 @@ export const useStore = create<State>()((set, get) => {
       loadActive(s.tabs, i);
     },
 
-    openInNewTab(name, il, savedAs = null) {
+    openInNewTab(name, il, savedAs = null, extra) {
       const s = get();
-      const tabs = [...s.tabs, { id: newId(), name, il, base: il, savedAs }];
+      const tabs = [...s.tabs, { id: newId(), name, il, base: il, savedAs, ...extra }];
       loadActive(tabs, tabs.length - 1);
     },
 
@@ -401,4 +403,5 @@ export const useStore = create<State>()((set, get) => {
 
 /** Etkin sekme */
 export const activeTab = (s: State): TabData => s.tabs[s.active]!;
-export const isDirty = (t: TabData): boolean => t.il !== t.base;
+/** Alıştırma sekmesi kendiliğinden ilerlemeye yazılır: kayda bağlanmadıkça "kaydedilmedi" sayılmaz */
+export const isDirty = (t: TabData): boolean => t.il !== t.base && !(t.exercise && !t.savedAs);

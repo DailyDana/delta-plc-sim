@@ -73,6 +73,16 @@ Model: `--model ES2|SS2|EH3|v1` (varsayılan ES2). v1 profili yalnızca eski dav
   emin değilsen önce `npm run plc -- sim` ile dene.
 - CLI: `npm run plc -- alistirma` (liste) · `alistirma <kimlik> [--ipucu n]` (görev + başlangıç IL'i) · `alistirma <kimlik> <dosya.txt>`
   (ya da `-e`; senaryo senaryo ✓/✗ ve ileti, kalırsa çıkış kodu 1) · `--cozum` referansı yazar (başka hiçbir komut yazmaz).
+- Arayüz `src/ui/exercise/`: `progress.ts` saf işlevler (ilerleme `dps2.exercises` = çözülenler/son IL/ipucu sayısı, sekme bağı,
+  `#alistirma=<kimlik>` ayrıştırma; `tests/exercise-ui.test.ts`), `store.ts` (ilerleme + sekme başına son denetim; `openExercise`,
+  `checkActive`; alıştırma sekmelerinin IL'i `useStore.subscribe` ile ilerlemeye yazılır), `ExerciseList.tsx` (sol panel "Alıştırma"
+  sekmesi), `ExercisePanel.tsx` (alıştırma sekmesinde sağ panelin üstü: görev, G/Ç, Kontrol et/İpucu/Baştan başla, senaryo listesi),
+  `ComparePanel.tsx` (alt panel "Karşılaştırma": `Waveform` öğrenci düz / referans kesikli, `marker` = ilk sorunun anı),
+  `playback.ts` ("Bu senaryoyu oynat": olaylar motorun `afterScan` kancasında bir sonraki taramanın girişine yazılır; STOP→RUN, sekme
+  değişimi ya da süre sonu bitirir). Sekme verisinde `exercise` alanı; alıştırma sekmesi "kaydedilmedi" sayılmaz.
+- Referans çözümün IL'i arayüzde hiçbir yere konmaz: bileşenler `publicExercise()` (solutionIl'siz) kullanır, yalnızca denetim
+  sonucundaki iz çizilir. `window.plc`: `exercises()`, `openExercise(id)`, `checkExercise()` (düz sonuç), `exerciseProgress()`.
+  e2e: `e2e/alistirma.spec.ts` (sızıntı denetimi dahil).
 
 ## Tarayıcıda sürmek: `window.plc` (v2) / `PLC.app` (v1)
 

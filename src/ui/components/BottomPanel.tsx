@@ -1,14 +1,18 @@
 // Alt panel: IL düzenleyicisi · izleme tablosu · sorunlar · zaman diyagramı.
 
-import { Activity, ChevronDown, FileCode, Gauge, TriangleAlert } from 'lucide-react';
+import { Activity, ChevronDown, FileCode, Gauge, GitCompare, TriangleAlert } from 'lucide-react';
 import { useStore, type BottomTab } from '../state/store';
 import { IlEditor } from './IlEditor';
 import { WatchPanel } from './WatchPanel';
 import { ProblemsPanel } from './ProblemsPanel';
 import { TimingPanel } from '../timing/TimingPanel';
+import { ComparePanel } from '../exercise/ComparePanel';
 
 export function BottomPanel() {
-  const tab = useStore((s) => s.settings.bottomTab);
+  const isEx = useStore((s) => !!s.tabs[s.active]?.exercise);
+  const want = useStore((s) => s.settings.bottomTab);
+  // Karşılaştırma yalnızca alıştırma sekmesinde var; başka sekmede IL'e düşülür (ayar korunur)
+  const tab: BottomTab = want === 'exercise' && !isEx ? 'il' : want;
   const diags = useStore((s) => s.doc.diagnostics);
   const errs = diags.filter((d) => d.severity === 'error').length;
   const warns = diags.length - errs;
@@ -25,6 +29,7 @@ export function BottomPanel() {
     },
     { id: 'timing', label: 'Zaman diyagramı', icon: <Activity size={15} /> },
   ];
+  if (isEx) tabs.push({ id: 'exercise', label: 'Karşılaştırma', icon: <GitCompare size={15} /> });
 
   return (
     <section className="bottom" aria-label="Alt panel">
@@ -43,7 +48,7 @@ export function BottomPanel() {
         </div>
       </div>
       <div className="bbody" role="tabpanel">
-        {tab === 'il' ? <IlEditor /> : tab === 'watch' ? <WatchPanel /> : tab === 'timing' ? <TimingPanel /> : <ProblemsPanel />}
+        {tab === 'il' ? <IlEditor /> : tab === 'watch' ? <WatchPanel /> : tab === 'timing' ? <TimingPanel /> : tab === 'exercise' ? <ComparePanel /> : <ProblemsPanel />}
       </div>
     </section>
   );

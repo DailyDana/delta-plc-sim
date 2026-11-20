@@ -9,6 +9,8 @@ export interface TabData {
   base: string;
   /** Bağlı olduğu kayıt adı */
   savedAs: string | null;
+  /** Bağlı olduğu alıştırmanın kimliği (alıştırma sekmesi) */
+  exercise?: string;
 }
 
 export interface LibEntry {
@@ -109,13 +111,17 @@ function cleanTabs(raw: unknown): TabsData | null {
   if (!raw || typeof raw !== 'object') return null;
   const r = raw as { tabs?: unknown[]; active?: number; seq?: number };
   if (!Array.isArray(r.tabs)) return null;
-  const tabs = r.tabs.filter(isTab).map((t) => ({
-    id: typeof t.id === 'string' ? t.id : newId(),
-    name: t.name,
-    il: t.il,
-    base: typeof t.base === 'string' ? t.base : t.il,
-    savedAs: typeof t.savedAs === 'string' ? t.savedAs : null,
-  }));
+  const tabs = r.tabs.filter(isTab).map((t) => {
+    const o: TabData = {
+      id: typeof t.id === 'string' ? t.id : newId(),
+      name: t.name,
+      il: t.il,
+      base: typeof t.base === 'string' ? t.base : t.il,
+      savedAs: typeof t.savedAs === 'string' ? t.savedAs : null,
+    };
+    if (typeof t.exercise === 'string' && t.exercise) o.exercise = t.exercise;
+    return o;
+  });
   if (!tabs.length) return null;
   return { v: 2, tabs, active: Math.max(0, Math.min(tabs.length - 1, r.active ?? 0)), seq: r.seq ?? tabs.length + 1 };
 }

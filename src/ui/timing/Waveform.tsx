@@ -45,6 +45,8 @@ export interface WaveformProps {
   /** Kayıt yokken (iz boş) çizim alanının üstünde gösterilecek ipucu */
   idleText?: ReactNode;
   rowH?: number;
+  /** Başlangıçta A imlecinin konacağı an (ms); değişince imleç yeniden konur (ör. ilk ayrışma) */
+  marker?: number | null;
 }
 
 const AXIS_H = 26;
@@ -146,6 +148,14 @@ export function Waveform(props: WaveformProps) {
     setSpanTxt(formatMs(v.span));
     setMeas({ a: cur.current.a, b: cur.current.b });
   }, []);
+
+  // dışarıdan verilen işaret: A imleci
+  useEffect(() => {
+    if (props.marker === undefined) return;
+    cur.current = { a: props.marker, b: null, active: 'a' };
+    draw();
+    syncUi();
+  }, [props.marker, draw, syncUi]);
 
   // canlı kaynak: her karede çiz
   useEffect(() => {

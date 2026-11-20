@@ -4,6 +4,7 @@ import { EXAMPLES, PROFILES } from '../../core';
 import { useStore } from '../state/store';
 import { engine } from '../sim/engine';
 import { exportIl, openOrSwitch, saveCurrent, share, showLadderText } from './fileops';
+import { EXERCISE_LIST, openExercise, useExercises } from '../exercise/store';
 
 interface Cmd {
   grp: string;
@@ -36,6 +37,8 @@ function commands(): Cmd[] {
     { grp: 'Yardım', name: 'Yardım ve kısayollar', key: 'F1', run: () => s.setUi({ helpOpen: true }) },
   ];
   for (const p of Object.values(PROFILES)) c.push({ grp: 'Model', name: `Model: ${p.id === 'v1' ? 'v1 (sade)' : 'DVP-' + p.id}`, run: () => s.set('model', p.id) });
+  const solved = useExercises.getState().progress.solved;
+  EXERCISE_LIST.forEach((e) => c.push({ grp: 'Alıştırma', name: `Alıştırma: ${e.title}${solved[e.id] ? ' (çözüldü)' : ''}`, run: () => void openExercise(e.id) }));
   EXAMPLES.forEach((e) => c.push({ grp: 'Örnek', name: e.name, run: () => s.openInNewTab(e.name, e.il) }));
   Object.keys(s.lib).forEach((n) => c.push({ grp: 'Kayıt', name: n, run: () => openOrSwitch(n) }));
   s.tabs.forEach((t, i) => c.push({ grp: 'Sekme', name: t.name, run: () => s.switchTab(i) }));
@@ -138,6 +141,8 @@ export function HelpModal() {
           </ul>
           <h3>Zaman diyagramı</h3>
           <p>Alt paneldeki <b>Zaman diyagramı</b> sekmesi, seçili cihazların PLC zamanına göre dalgasını çizer: her RUN yeni kayıt başlatır, STOP'ta kayıt silinmez, başka devreye geçince ya da "Temizle" ile silinir. Diyagrama tıklayınca A imleci, bir daha tıklayınca B imleci konur ve aradaki süre (Δt) üstte yazar; imleç yakındaki kenara yapışır (Alt basılıyken yapışmaz), satır başlarında imleç anındaki değerler okunur. Sürükle: kaydır, <kbd>Ctrl</kbd>+tekerlek: yakınlaştır, "Canlıya dön" yeniden sona yapıştırır; "PNG" görünen kısmı baskıya uygun indirir.</p>
+          <h3>Alıştırmalar</h3>
+          <p>Sol paneldeki <b>Alıştırma</b> sekmesinde "şu davranışı yapan devreyi kur" türü görevler var; birini seçince kendi sekmesinde açılır, görev metni sağ panelin üstünde durur ve çalışman bu tarayıcıda saklanır. <b>Kontrol et</b> devreni birkaç senaryoda dener: kalan senaryonun iletisi neyin, ne zaman beklenenden farklı olduğunu söyler; senaryoya tıklayınca alt paneldeki <b>Karşılaştırma</b> sekmesinde senin dalgan (düz) beklenenle (kesikli) üst üste çizilir. "Bu senaryoyu oynat" aynı buton basışlarını gerçek PLC'ye uygular, ladder'da akımı izleyebilirsin.</p>
           <h3>Zamanlayıcılar</h3>
           <p>Taban süre modele göre değişir (üst çubukta model seçimi). DVP-ES2'de T0–T126 ve T128–T199 100 ms, T127 1 ms, T200–T239 10 ms; T240–T255 birikimli: akım kesilince değer korunur, RST ile sıfırlanır. <code>TMR T0 K50</code> = 5 s. Normal zamanlayıcı, önündeki akım kesildiği anda sıfırlanır; süre dolunca T0 kontağı kapanır.</p>
           <h3>Ana kontrol (MC / MCR)</h3>

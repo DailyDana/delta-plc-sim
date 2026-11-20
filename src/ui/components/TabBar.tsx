@@ -1,6 +1,6 @@
 // Sekmeler: tıkla geç, çift tıkla adlandır, orta tık / × kapat, sürükleyerek sırala.
 import { useState } from 'react';
-import { Plus, X } from 'lucide-react';
+import { GraduationCap, Plus, X } from 'lucide-react';
 import { isDirty, useStore } from '../state/store';
 import { closeTab, renameTabDlg } from './fileops';
 
@@ -12,7 +12,8 @@ export function TabBar() {
   return (
     <nav className="tabbar" role="tablist" aria-label="Açık devreler" id="tabs">
       {tabs.map((t, i) => {
-        const dirty = isDirty(t) || !t.savedAs;
+        // alıştırma sekmesi ilerlemeye kendiliğinden yazılır; kayıt noktası gösterilmez
+        const dirty = isDirty(t) || (!t.savedAs && !t.exercise);
         return (
           <div
             key={t.id}
@@ -42,6 +43,7 @@ export function TabBar() {
               if (e.key === 'F2') void renameTabDlg(i);
             }}
           >
+            {t.exercise && <GraduationCap className="tex" size={14} aria-hidden />}
             <span className="tname">{t.name}</span>
             {dirty && <span className="dot" title={t.savedAs ? 'Kaydedilmemiş değişiklik var' : 'Henüz kayıtlara eklenmedi'} />}
             <button

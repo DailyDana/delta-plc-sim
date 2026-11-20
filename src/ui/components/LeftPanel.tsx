@@ -9,6 +9,7 @@ import { beginPointer, clickSuppressed, focusOperandSoon, registerTrash, useDrag
 import { API_PARTS, COIL_PARTS, CONTACT_PARTS, DATA_CONTACT_PARTS, MC_PARTS, PartIcon } from './symbols';
 import { askConfirm, askText, showText } from './dialogs';
 import { downloadText, fileSafe, openOrSwitch } from './fileops';
+import { ExerciseList } from '../exercise/ExerciseList';
 
 function Part({ payload, name, title }: { payload: Extract<DragPayload, { src: 'palette' }>; name: string; title: string }) {
   return (
@@ -242,8 +243,11 @@ export function LeftPanel() {
         <button role="tab" aria-selected={tab === 'project'} className={tab === 'project' ? 'on' : ''} onClick={() => set('leftTab', 'project')}>
           Proje
         </button>
+        <button role="tab" aria-selected={tab === 'exercises'} className={tab === 'exercises' ? 'on' : ''} onClick={() => set('leftTab', 'exercises')} title="Alıştırmalar: şu davranışı yapan devreyi kur">
+          Alıştırma
+        </button>
       </div>
-      {tab === 'parts' ? <Parts /> : <Project />}
+      {tab === 'parts' ? <Parts /> : tab === 'exercises' ? <ExerciseList /> : <Project />}
     </aside>
   );
 }

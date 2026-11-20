@@ -47,7 +47,8 @@ export async function closeTab(i: number): Promise<void> {
   const s = useStore.getState();
   const t = s.tabs[i];
   if (!t) return;
-  if (isDirty(t) || (!t.savedAs && t.il.split('\n').length > 6)) {
+  // alıştırma sekmesinin IL'i ilerlemede saklı: kapatınca kaybolmaz
+  if (isDirty(t) || (!t.savedAs && !t.exercise && t.il.split('\n').length > 6)) {
     const ok = await askConfirm('Sekme kapatılsın mı?', `"${t.name}" kaydedilmedi; kapatırsan değişiklikler kaybolur.\nSaklamak için Vazgeç'e bas, sonra Kaydet (Ctrl+S).`, { okText: 'Kaydetmeden kapat', danger: true });
     if (!ok) return;
   }
