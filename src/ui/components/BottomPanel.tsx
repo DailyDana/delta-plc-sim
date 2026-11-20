@@ -1,10 +1,11 @@
-// Alt panel: IL düzenleyicisi · izleme tablosu · sorunlar.
+// Alt panel: IL düzenleyicisi · izleme tablosu · sorunlar · zaman diyagramı.
 
-import { ChevronDown, FileCode, Gauge, TriangleAlert } from 'lucide-react';
+import { Activity, ChevronDown, FileCode, Gauge, TriangleAlert } from 'lucide-react';
 import { useStore, type BottomTab } from '../state/store';
 import { IlEditor } from './IlEditor';
 import { WatchPanel } from './WatchPanel';
 import { ProblemsPanel } from './ProblemsPanel';
+import { TimingPanel } from '../timing/TimingPanel';
 
 export function BottomPanel() {
   const tab = useStore((s) => s.settings.bottomTab);
@@ -22,6 +23,7 @@ export function BottomPanel() {
       icon: <TriangleAlert size={15} />,
       extra: errs ? <span className="count err">{errs}</span> : warns ? <span className="count warn">{warns}</span> : <span className="count">0</span>,
     },
+    { id: 'timing', label: 'Zaman diyagramı', icon: <Activity size={15} /> },
   ];
 
   return (
@@ -41,7 +43,7 @@ export function BottomPanel() {
         </div>
       </div>
       <div className="bbody" role="tabpanel">
-        {tab === 'il' ? <IlEditor /> : tab === 'watch' ? <WatchPanel /> : <ProblemsPanel />}
+        {tab === 'il' ? <IlEditor /> : tab === 'watch' ? <WatchPanel /> : tab === 'timing' ? <TimingPanel /> : <ProblemsPanel />}
       </div>
     </section>
   );

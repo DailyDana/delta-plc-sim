@@ -10,3 +10,5 @@ export * from './simulate';
 export * from './share';
 export * from './textdraw';
 export * from './examples';
+export * from './trace';
+export * from './exercise';

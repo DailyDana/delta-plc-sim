@@ -1,9 +1,11 @@
 // Dışarıdan sürme API'si (tarayıcı konsolu, Playwright, Claude): window.plc
 // ve paylaşım bağlantısıyla açma (#il=<base64url>&ad=<ad>&run=1, #ornek=<n>).
 
-import { EXAMPLES, decodeShare, drawLadderText, formatAddress, hasErrors, parseAddress, type Diagnostic } from '../core';
+import { EXAMPLES, decodeShare, drawLadderText, formatAddress, hasErrors, parseAddress, type Diagnostic, type Trace } from '../core';
 import { useStore } from './state/store';
 import { engine, SCAN_MS } from './sim/engine';
+import { recorder } from './sim/recording';
+import { useTiming } from './timing/selection';
 
 export interface PlcApi {
   load(il: string, name?: string): { ok: boolean; errors: Diagnostic[]; warnings: Diagnostic[]; rungs: number };
@@ -20,6 +22,11 @@ export interface PlcApi {
   advance(ms: number): Record<string, number | string>;
   state(): Record<string, number | string>;
   model(id?: string): string;
+  /**
+   * Zaman diyagramı kaydının kopyası (PLC zamanı, ms): { start, end, signals: { Y0: { init, t: [..], v: [..] } } }.
+   * devs verilirse yalnızca o anahtarlar ("Y0", "T0", "T0.v", "D0").
+   */
+  trace(devs?: string[]): Trace;
 }
 
 function xIndex(x: string): number {
@@ -100,7 +107,19 @@ export const api: PlcApi = {
     if (id) useStore.getState().set('model', id);
     return useStore.getState().settings.model;
   },
+  trace(devs) {
+    const tr = recorder.snapshot();
+    if (devs) {
+      const signals: Trace['signals'] = {};
+      for (const d of devs) if (tr.signals[d]) signals[d] = tr.signals[d];
+      tr.signals = signals;
+    }
+    return tr;
+  },
 };
+
+// zaman diyagramı seçim kaydı modül yüklenince bağlanır (kayıt seçimdeki ek cihazları da tutsun)
+void useTiming;
 
 /** Adres çubuğundaki bağlantıyı aç; aynı devre zaten açıksa o sekmeye geç */
 export function openFromHash(): void {

@@ -53,10 +53,39 @@ Model: `--model ES2|SS2|EH3|v1` (varsayılan ES2). v1 profili yalnızca eski dav
   Yeni örnek: `devreler/NN-ad.txt` yaz (ilk yorum `; Dene: …`) → `kontrol` → `sim` ile yorumdaki davranışı doğrula → `tools/ornekler.cjs` listesinin SONUNA ekle (sıra değişirse `#ornek=N` bağlantıları kayar) → `npm run ornekler`.
 - Kaskad çıkış (`OUT A / AND b / OUT C / OUT D`): `ilToLadder` kontağı bobinlere kopyalamaz, ara düğümün ön serisi yapar (kontak bir kez okunur). Bunu bozan değişiklik `tests/kaskad.test.ts`'te yakalanır.
 
+## Alıştırmalar ("şu davranışı yapan devreyi kur")
+
+- Kod: `src/core/exercise.ts` (türler + `checkExercise(il, ex, { profile })`), içerik `src/core/exercises/` (`define.ts` yardımcıları,
+  `kumanda.ts` 1–4, `zaman.ts` 5–9, `uygulama.ts` 10–12, sıra `index.ts`'teki `EXERCISES`). Testler: `tests/exercise.test.ts`.
+- Alıştırma: kalıcı `id` (sıra değişse de değişmez), `title`, `level` 1–3, `task` (öğrenci metni; adresler ve NO buton varsayımı açık),
+  `inputs/outputs` (`io(dev, etiket, tür)`; tür iletideki fiili seçer: lamba yandı, motor durdu, kontaktör bıraktı), `solutionIl` (gizli),
+  `hints` (1–3, sonuncusu da çözümü vermez), `scenarios`. `starterIl` `define()` ile üretilir: yorum + `#X0 etiket` satırları + END.
+- Senaryo: `scenario(ad, olaylar /* parseEvents biçimi */, süre_s, örnekler, { invariants, timing })`.
+  Örnek noktası `on(s, 'Y0', not?)` / `off(...)`: beklenen kenarlardan en az ~0,2 s uzak seç (doğru çözümlerin 1–2 tarama farkı sonucu değiştirmesin).
+  Değişmez `never('Y1')`, `notBoth('Y1','Y2')`: izdeki her değişim anında (= her taramada) denetlenir.
+  Zamanlama `delay('X0','rise', 3, 'Y0','rise', { n, tol /* vars. 0,1 s */ })`. `not` kalınca iletiye eklenen kısa yönlendirme cümlesidir.
+- Denetim yalnızca görevin çıkışlarına bakar (M/T/C/D ve görev dışı Y serbest). Senaryodaki ilk (en erken; eşitlikte zamanlama > değişmez > örnek)
+  başarısızlığın iletisi `message`'dır. Engelleyici hatada `blocked: true`, senaryolara girilmez. Sonuçta öğrencinin ve referansın izi
+  (`student`/`reference`, simulate() `changes` biçimi, izlenen = görev girişleri + çıkışları) arayüzde üst üste çizmek içindir.
+- Yeni alıştırma: içerik dosyasına `define({...})` ekle → `exercises/index.ts` listesinin SONUNA koy → `tests/exercise.test.ts` `CASES`'e
+  kimlikle en az 2 farklı yapıda doğru çözüm (SET/RST, başka zamanlayıcı, yardımcı röle…) ve en az 2 tipik yanlış çözüm (ilk iletinin
+  cihaz/zamanını gösteren düzenli ifadeyle) ekle. Referans + doğrular geçmeli, yanlışlar kalmalı; boş başlangıç IL'i kalmalı. Davranıştan
+  emin değilsen önce `npm run plc -- sim` ile dene.
+- CLI: `npm run plc -- alistirma` (liste) · `alistirma <kimlik> [--ipucu n]` (görev + başlangıç IL'i) · `alistirma <kimlik> <dosya.txt>`
+  (ya da `-e`; senaryo senaryo ✓/✗ ve ileti, kalırsa çıkış kodu 1) · `--cozum` referansı yazar (başka hiçbir komut yazmaz).
+
 ## Tarayıcıda sürmek: `window.plc` (v2) / `PLC.app` (v1)
 
 `load(il, ad)`, `set('X0', 1)`, `press('X0', ms)`, `advance(ms)` (belirlenimli), `run()/pause()/stop()/step()/powerCycle()`, `state()` → `{ mode, scan, t, Y0: 1, T0: '25/100' }`, `getIL()`.
-v2'de ayrıca `getLadder()` (metin çizim), `diagnostics()`, `model('EH3')`. Testler için `window.__engine` (`rewindClock`, `tick`) ve `window.__store`.
+v2'de ayrıca `getLadder()` (metin çizim), `diagnostics()`, `model('EH3')`, `trace(['Y0'])` (zaman diyagramı kaydı). Testler için `window.__engine` (`rewindClock`, `tick`) ve `window.__store`.
+
+## Zaman diyagramı
+
+- İz verisi `src/core/trace.ts`: `Trace = { start, end, signals: { [anahtar]: { init, t[], v[], from? } } }` (PLC zamanı, ms). Anahtarlar `X0/Y0/M0/S0`, `T0`/`C0` (kontak), `T0.v`/`C0.v` (değer), `D0`.
+  `traceFromSim(simulate(...), süre)` simulate sonucunu çevirir; `diffRanges`/`traceDiff` iki izin ayrıştığı aralıklar; `snapToEdge` imleç yapışması; `TraceRecorder` halka tampon (50 000 değişim / 30 dk).
+- Kayıt `src/ui/sim/recording.ts` (motor kancaları `engine.addHooks`): X taramadan önce, diğerleri taramadan sonra örneklenir (simulate ile aynı kenar zamanları; `tests/trace.test.ts`).
+  STOP→RUN yeni kayıt; STOP/güç kesmede kayıt donar; sekme/model değişiminde silinir; çalışırken düzenlemede sürer.
+- Çizim `src/ui/timing/`: `Waveform.tsx` yeniden kullanılabilir bileşen (`rows`, `trace` ya da canlı `() => Trace` + `subscribe`, isteğe bağlı `expected` kesikli + ayrışma vurgusu), `draw.ts` canvas çizimi, `png.ts` açık temalı PNG, `TimingPanel.tsx` alt panel sekmesi, `selection.ts` sekme başına cihaz seçimi (`dps2.timing`). e2e: `e2e/timing.spec.ts`.
 
 ## Test ve yayın
 

@@ -23,7 +23,7 @@ import { engine } from '../sim/engine';
 import { loadAll, loadSettings, newId, saveLib, saveSettings, saveTabs, storage, type Library, type TabData } from './persist';
 
 export type Theme = 'light' | 'dark';
-export type BottomTab = 'il' | 'watch' | 'problems';
+export type BottomTab = 'il' | 'watch' | 'problems' | 'timing';
 export type LeftTab = 'parts' | 'project';
 
 export interface Settings {

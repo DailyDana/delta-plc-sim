@@ -30,6 +30,7 @@ function commands(): Cmd[] {
     { grp: 'Görünüm', name: 'IL düzenleyici', key: 'Ctrl+J', run: () => (s.set('bottomOpen', true), s.set('bottomTab', 'il')) },
     { grp: 'Görünüm', name: 'İzleme tablosu', run: () => (s.set('bottomOpen', true), s.set('bottomTab', 'watch')) },
     { grp: 'Görünüm', name: 'Sorunlar', run: () => (s.set('bottomOpen', true), s.set('bottomTab', 'problems')) },
+    { grp: 'Görünüm', name: 'Zaman diyagramı', run: () => (s.set('bottomOpen', true), s.set('bottomTab', 'timing')) },
     { grp: 'Görünüm', name: 'Alt paneli aç / kapat', run: () => s.set('bottomOpen', !s.settings.bottomOpen) },
     { grp: 'Görünüm', name: 'Yakınlaştırmayı sıfırla (100%)', run: () => s.set('zoom', 1) },
     { grp: 'Yardım', name: 'Yardım ve kısayollar', key: 'F1', run: () => s.setUi({ helpOpen: true }) },
@@ -135,6 +136,8 @@ export function HelpModal() {
             <li>Girişler: sağdaki X butonlarına bas ya da klavyede <kbd>0</kbd>–<kbd>7</kbd>. Sağ tık girişi kilitler. "Anahtar" kipinde her tıklama 0/1 değiştirir.</li>
             <li>STOP→RUN'da kalıcı olmayan bellek silinir; kalıcı (latched) bölgeler korunur. Güç düğmesi her şeyi siler.</li>
           </ul>
+          <h3>Zaman diyagramı</h3>
+          <p>Alt paneldeki <b>Zaman diyagramı</b> sekmesi, seçili cihazların PLC zamanına göre dalgasını çizer: her RUN yeni kayıt başlatır, STOP'ta kayıt silinmez, başka devreye geçince ya da "Temizle" ile silinir. Diyagrama tıklayınca A imleci, bir daha tıklayınca B imleci konur ve aradaki süre (Δt) üstte yazar; imleç yakındaki kenara yapışır (Alt basılıyken yapışmaz), satır başlarında imleç anındaki değerler okunur. Sürükle: kaydır, <kbd>Ctrl</kbd>+tekerlek: yakınlaştır, "Canlıya dön" yeniden sona yapıştırır; "PNG" görünen kısmı baskıya uygun indirir.</p>
           <h3>Zamanlayıcılar</h3>
           <p>Taban süre modele göre değişir (üst çubukta model seçimi). DVP-ES2'de T0–T126 ve T128–T199 100 ms, T127 1 ms, T200–T239 10 ms; T240–T255 birikimli: akım kesilince değer korunur, RST ile sıfırlanır. <code>TMR T0 K50</code> = 5 s. Normal zamanlayıcı, önündeki akım kesildiği anda sıfırlanır; süre dolunca T0 kontağı kapanır.</p>
           <h3>Ana kontrol (MC / MCR)</h3>

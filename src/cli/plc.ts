@@ -6,8 +6,11 @@ import { pathToFileURL } from 'node:url';
 import { resolve } from 'node:path';
 import {
   EXAMPLES,
+  EXERCISES,
   PROFILES,
+  checkExercise,
   checkIl,
+  getExercise,
   drawLadderText,
   getProfile,
   ilToLadder,
@@ -29,6 +32,9 @@ const HELP = `Delta PLC Simülatör — komut satırı
   plc ciz <dosya>                ladder'ı metin olarak çiz
   plc link <dosya> [--ad ad] [--run] [--yerel]   devreyi açan bağlantı
   plc ornek [n]                  örnekleri listele / n. örneğin IL'ini yaz
+  plc alistirma                  alıştırmaları listele
+  plc alistirma <kimlik> [--ipucu n]   görev metni + başlangıç programı
+  plc alistirma <kimlik> <dosya> denetle (kalırsa çıkış kodu 1); --cozum referans çözümü yazar
 
   <dosya> yerine:  -e "LD X0\\nOUT Y0"  (satır içi IL)  ya da  -  (stdin)  ya da  ornek:3
   Ortak: --model <${Object.keys(PROFILES).join('|')}>
@@ -50,7 +56,7 @@ function parseArgs(argv: string[]): Args {
     else if (a.startsWith('--')) {
       const k = a.slice(2);
       const next = argv[i + 1];
-      if (next !== undefined && !next.startsWith('--') && !['run', 'yerel', 'dalga', 'json', 'il'].includes(k)) {
+      if (next !== undefined && !next.startsWith('--') && !['run', 'yerel', 'dalga', 'json', 'il', 'cozum'].includes(k)) {
         opt[k] = next;
         i++;
       } else opt[k] = true;
@@ -177,6 +183,48 @@ function cmdLink(a: Args): number {
   return 0;
 }
 
+function cmdAlistirma(a: Args, profileId: string | undefined): number {
+  const id = a.pos[0];
+  if (!id) {
+    EXERCISES.forEach((e, i) => console.log(`${String(i + 1).padStart(2)}  ${e.id.padEnd(20)} düzey ${e.level}  ${e.title}`));
+    return 0;
+  }
+  const ex = getExercise(id) ?? (/^\d+$/.test(id) ? EXERCISES[parseInt(id, 10) - 1] : undefined);
+  if (!ex) throw new Error(`Alıştırma yok: ${id} (liste için: plc alistirma)`);
+  // Referans çözüm yalnızca açıkça istenince basılır
+  if (a.opt.cozum) {
+    console.log(ex.solutionIl);
+    return 0;
+  }
+  const hasProgram = a.pos.length > 1 || typeof a.opt.e === 'string';
+  if (!hasProgram) {
+    console.log(`${ex.title}  (${ex.id}, düzey ${ex.level})\n`);
+    console.log(ex.task);
+    console.log('\nGirişler: ' + ex.inputs.map((i) => `${i.dev} ${i.label}`).join(', '));
+    console.log('Çıkışlar: ' + ex.outputs.map((o) => `${o.dev} ${o.label}`).join(', '));
+    const n = typeof a.opt.ipucu === 'string' ? parseInt(a.opt.ipucu, 10) : a.opt.ipucu ? 1 : 0;
+    ex.hints.slice(0, n).forEach((h, i) => console.log(`İpucu ${i + 1}: ${h}`));
+    console.log('\nBaşlangıç programı:\n\n' + ex.starterIl);
+    return 0;
+  }
+  const { text, name } = readSource({ ...a, pos: a.pos.slice(1) });
+  const opts: Parameters<typeof checkExercise>[2] = {};
+  if (profileId) opts.profile = profileId;
+  const r = checkExercise(text, ex, opts);
+  console.log(`${ex.title}: ${name}\n`);
+  if (r.blocked) {
+    console.log('  ' + r.message);
+    r.diagnostics.forEach((d) => console.log(fmtDiag(d)));
+    return 1;
+  }
+  for (const s of r.scenarios) {
+    console.log(`  ${s.passed ? '✓' : '✗'} ${s.name}`);
+    if (!s.passed) console.log(`      ${s.message}`);
+  }
+  console.log('\n' + r.message);
+  return r.passed ? 0 : 1;
+}
+
 function cmdOrnek(a: Args): number {
   const n = a.pos[0] ? parseInt(a.pos[0], 10) : NaN;
   if (Number.isNaN(n)) {
@@ -198,6 +246,7 @@ export function main(argv: string[]): number {
     case 'ciz': return cmdCiz(a, profileId);
     case 'link': return cmdLink(a);
     case 'ornek': return cmdOrnek(a);
+    case 'alistirma': return cmdAlistirma(a, profileId);
     default:
       console.log(HELP);
       return a.cmd === 'yardim' || a.cmd === 'help' ? 0 : 1;

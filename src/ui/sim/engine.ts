@@ -15,6 +15,20 @@ const MAX_CATCHUP_MS = 60000;
 const MAX_SCANS_PER_TICK = 8000;
 const NX = 256;
 
+/** Motor olaylarına abonelik (zaman diyagramı kaydı bunu kullanır) */
+export interface EngineHooks {
+  /** STOP'tan çalışmaya geçildi (bellek sıfırlandı, PLC zamanı 0) */
+  started?(m: Machine): void;
+  /** Taramadan hemen önce (girişler makineye yazıldı) */
+  beforeScan?(m: Machine): void;
+  /** Taramadan hemen sonra */
+  afterScan?(m: Machine): void;
+  /** Başka devre yüklendi (sekme değişimi, model değişimi, yeni yükleme) */
+  fresh?(): void;
+  /** Program (yeniden) yüklendi; çalışırken düzenlemede de çağrılır */
+  loaded?(m: Machine | null): void;
+}
+
 export interface LoadResult {
   ok: boolean;
   diagnostics: Diagnostic[];
@@ -43,6 +57,14 @@ class Engine {
   private raf = 0;
   private il = '';
   private profileId = '';
+  private hooks: EngineHooks[] = [];
+
+  addHooks(h: EngineHooks): () => void {
+    this.hooks.push(h);
+    return () => {
+      this.hooks = this.hooks.filter((x) => x !== h);
+    };
+  }
 
   /** Programı yükle. Çalışırken çağrılırsa cihaz belleği devralınır (çevrimiçi düzenleme). */
   load(il: string, profileId: string, opts: { fresh?: boolean } = {}): LoadResult {
@@ -53,6 +75,7 @@ class Engine {
       this.mode = 'stop';
       this.clearPulses();
       this.il = '';
+      for (const h of this.hooks) h.fresh?.();
     }
     if (il === this.il && profileId === this.profileId && this.machine && !this.stale) return { ok: true, diagnostics: [] };
     const { machine, diagnostics } = Machine.fromText(il, { profile: profileId });
@@ -72,6 +95,7 @@ class Engine {
       this.machine = null;
       this.stale = false;
       if (this.mode !== 'stop') this.mode = 'stop';
+      for (const h of this.hooks) h.loaded?.(null);
       this.touch();
       return { ok: false, diagnostics };
     }
@@ -79,6 +103,7 @@ class Engine {
     if (old && sameProfile) machine.adoptState(old);
     this.machine = machine;
     this.stale = false;
+    for (const h of this.hooks) h.loaded?.(machine);
     this.touch();
     return { ok: true, diagnostics };
   }
@@ -87,6 +112,11 @@ class Engine {
     this.dirty = true;
     this.version++;
     this.ensureLoop();
+  }
+
+  /** Abonelere bir sonraki karede yeniden çizim bildir (ör. kayıt temizlendi) */
+  invalidate(): void {
+    this.touch();
   }
 
   private ensureLoop(): void {
@@ -131,6 +161,8 @@ class Engine {
   private startFromStop(): void {
     this.machine?.reset('run');
     this.clearPulses();
+    const m = this.machine;
+    if (m) for (const h of this.hooks) h.started?.(m);
   }
 
   run(): void {
@@ -193,7 +225,10 @@ class Engine {
     if (!m) return;
     const n = Math.min(m.inputs.length, NX);
     for (let i = 0; i < n; i++) m.inputs[i] = this.inputs[i]! | this.pulse[i]!;
+    const hs = this.hooks;
+    for (let i = 0; i < hs.length; i++) hs[i]!.beforeScan?.(m);
     m.scan(dt);
+    for (let i = 0; i < hs.length; i++) hs[i]!.afterScan?.(m);
     this.clearPulses();
   }
 

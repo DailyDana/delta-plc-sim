@@ -1128,6 +1128,200 @@ body.dragging * {
   color: var(--err);
 }
 
+/* ------------------------------------------------------------ zaman diyagramı */
+.wave {
+  height: 100%;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  outline: none;
+}
+.wave-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  padding: 5px 8px;
+  border-bottom: 1px solid var(--line-2);
+  min-width: 0;
+  flex: none;
+}
+.wave-bar .btn.wave-live:disabled {
+  opacity: 1;
+  color: var(--on);
+  border-color: color-mix(in srgb, var(--on) 45%, transparent);
+  background: var(--on-soft);
+}
+.wave-zoom,
+.wave-tools,
+.wave-add {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+.wave-tools {
+  margin-left: auto;
+  flex-wrap: wrap;
+}
+.wave-span {
+  font-size: var(--fs-xs);
+  color: var(--ink-2);
+  min-width: 48px;
+  text-align: center;
+}
+.btn.sm.icon {
+  width: 26px;
+  padding: 0;
+  justify-content: center;
+}
+.wave-meas {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: var(--fs-s);
+  min-width: 0;
+  flex-wrap: wrap;
+}
+.wave-meas .ca {
+  color: var(--accent);
+  font-weight: 600;
+}
+.wave-meas .cb {
+  color: var(--warn);
+  font-weight: 600;
+}
+.wave-meas .dt {
+  padding: 1px 7px;
+  border-radius: var(--r);
+  background: var(--accent-2);
+  color: var(--ink);
+}
+.wave-tip {
+  font-family: var(--font);
+}
+.wave-add .input {
+  width: 110px;
+  height: 26px;
+  font-size: var(--fs-s);
+}
+.wave-body {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  overflow: auto;
+  background: var(--canvas);
+}
+.wave-grid {
+  display: grid;
+  grid-template-columns: clamp(120px, 22%, 210px) minmax(0, 1fr);
+  min-width: 0;
+}
+.wave-corner,
+.wave-axis {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--canvas);
+  border-bottom: 1px solid var(--line);
+}
+.wave-corner {
+  left: 0;
+  z-index: 3;
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  color: var(--ink-3);
+  padding: 6px 10px;
+  border-right: 1px solid var(--line);
+  background: var(--panel);
+}
+.wave-axis,
+.wave-plot {
+  position: relative;
+  min-width: 0;
+  overflow: hidden;
+  cursor: crosshair;
+  touch-action: none;
+}
+.wave-axis canvas,
+.wave-plot canvas {
+  display: block;
+}
+.wave-names {
+  border-right: 1px solid var(--line);
+  background: var(--panel);
+  min-width: 0;
+}
+.wave-name {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 8px 0 10px;
+  border-bottom: 1px solid var(--line-2);
+  min-width: 0;
+  overflow: hidden;
+}
+.wave-name .k {
+  font: 600 12.5px var(--mono);
+  white-space: nowrap;
+  flex: none;
+}
+.wave-name.on .k {
+  color: var(--on);
+}
+.wave-name .l {
+  color: var(--ink-3);
+  font-size: var(--fs-s);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+  flex: 1;
+}
+.wave-name .v {
+  margin-left: auto;
+  font: 600 12px var(--mono);
+  color: var(--ink-2);
+  flex: none;
+}
+.wave-name .acts {
+  position: absolute;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  display: none;
+  align-items: center;
+  gap: 1px;
+  padding: 0 4px;
+  background: var(--panel-2);
+}
+.wave-name:hover .acts,
+.wave-name:focus-within .acts {
+  display: flex;
+}
+.btn.icon.xs {
+  width: 22px;
+  height: 22px;
+}
+.btn.icon.xs svg {
+  width: 14px;
+  height: 14px;
+}
+.wave-idle {
+  position: absolute;
+  left: 12px;
+  top: 6px;
+  right: 12px;
+  padding: 6px 10px;
+  border-radius: var(--r);
+  background: var(--panel);
+  border: 1px solid var(--line-2);
+  color: var(--ink-2);
+  font-size: var(--fs-s);
+  pointer-events: none;
+}
+
 table.grid {
   width: 100%;
   border-collapse: collapse;
